@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../db/index.ts';

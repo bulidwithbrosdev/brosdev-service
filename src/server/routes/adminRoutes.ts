@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import express, { Response } from 'express';
+import express, { type Response } from 'express';
 import { and, count, desc, eq, gte, ilike, or, sql, sum } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../db/index.ts';
@@ -22,7 +22,7 @@ import {
   users,
 } from '../../db/schema.ts';
 import {
-  AuthRequest,
+  type AuthRequest,
   isAdmin2faVerified,
   markAdmin2faVerified,
   recordAdminAudit,

@@ -92,8 +92,15 @@ export async function parseApiResponse<T = any>(
     rawText.trimStart().startsWith('<html');
 
   if (looksLikeHtml) {
+    const titleMatch = rawText.match(/<title[^>]*>([^<]+)<\/title>/i);
+    const htmlTitle = titleMatch ? titleMatch[1].trim() : '';
+    const statusInfo = res.status ? `HTTP ${res.status}${htmlTitle ? ` - ${htmlTitle}` : ''}` : 'HTML response';
+    const hint =
+      res.status >= 500
+        ? 'The backend API server returned a server error. Check your hosting server logs and Environment Variables (DATABASE_URL).'
+        : 'Ensure the Node.js Express server handles /api/* routes or set VITE_API_BASE_URL to your backend URL.';
     throw new ApiError(
-      'Unable to reach the BrosDev Forms API server on this domain (received an HTML page instead of JSON). Ensure the Node.js Express server handles /api/* routes or set VITE_API_BASE_URL to your backend URL.',
+      `API request failed (${statusInfo}). ${hint}`,
       res.status || 502,
       'API_HTML_RESPONSE'
     );

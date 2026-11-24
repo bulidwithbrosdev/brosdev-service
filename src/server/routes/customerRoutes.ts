@@ -1,4 +1,4 @@
-import express, { Response } from 'express';
+import express, { type Response } from 'express';
 import { and, count, desc, eq, gte, ilike, lte, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../db/index.ts';
@@ -15,11 +15,11 @@ import {
   subscriptions,
   subscriptionUsage,
   users,
-  FormEmailConfig,
-  FormFieldConfig,
-  FormSpamConfig,
+  type FormEmailConfig,
+  type FormFieldConfig,
+  type FormSpamConfig,
 } from '../../db/schema.ts';
-import { AuthRequest, isAdmin2faVerified, requireAuth } from '../../middleware/auth.ts';
+import { type AuthRequest, isAdmin2faVerified, requireAuth } from '../../middleware/auth.ts';
 import {
   DEFAULT_INVOICE_TEMPLATE,
   getCurrentPeriodMonth,
