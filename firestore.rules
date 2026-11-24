@@ -1,0 +1,669 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 1: Global Default-Deny Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Global Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isBootstrappedSuperAdmin() {
+      return isSignedIn()
+        && request.auth.token.email_verified == true
+        && request.auth.token.email == 'gajjars614@gmail.com';
+    }
+
+    function isAdmin() {
+      return isBootstrappedSuperAdmin()
+        || (isSignedIn()
+          && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+          && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.isActive == true);
+    }
+
+    function isBoundedString(val, maxLen) {
+      return val is string && val.size() <= maxLen;
+    }
+
+    function isBoundedNonEmptyString(val, maxLen) {
+      return val is string && val.size() >= 1 && val.size() <= maxLen;
+    }
+
+    // Validation Blueprints (Anti-Update-Gap)
+    function isValidUser(data) {
+      return data.keys().hasAll([
+          'uid', 'numericId', 'email', 'displayName', 'photoUrl', 'status',
+          'planId', 'billingCycle', 'subscriptionStatus', 'currentPeriodStart',
+          'currentPeriodEnd', 'cancelAtPeriodEnd', 'provider', 'authProvider',
+          'hasPassword', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid', 'numericId', 'email', 'displayName', 'photoUrl', 'status',
+          'planId', 'billingCycle', 'subscriptionStatus', 'currentPeriodStart',
+          'currentPeriodEnd', 'cancelAtPeriodEnd', 'provider', 'customMaxForms',
+          'customMaxSubmissions', 'customMaxEmails', 'authProvider', 'hasPassword',
+          'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.uid)
+        && data.numericId is number
+        && isBoundedNonEmptyString(data.email, 254)
+        && isBoundedString(data.displayName, 120)
+        && isBoundedString(data.photoUrl, 500)
+        && data.status in ['active', 'suspended']
+        && data.planId is number && data.planId >= 1
+        && data.billingCycle in ['monthly', 'yearly']
+        && data.subscriptionStatus in ['active', 'canceled', 'trialing']
+        && isBoundedString(data.currentPeriodStart, 64)
+        && isBoundedString(data.currentPeriodEnd, 64)
+        && data.cancelAtPeriodEnd is bool
+        && isBoundedString(data.provider, 40)
+        && (!('customMaxForms' in data) || data.customMaxForms == null || (data.customMaxForms is number && data.customMaxForms >= 0))
+        && (!('customMaxSubmissions' in data) || data.customMaxSubmissions == null || (data.customMaxSubmissions is number && data.customMaxSubmissions >= 0))
+        && (!('customMaxEmails' in data) || data.customMaxEmails == null || (data.customMaxEmails is number && data.customMaxEmails >= 0))
+        && data.authProvider in ['email', 'google']
+        && data.hasPassword is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAdminUser(data) {
+      return data.keys().hasAll([
+          'uid', 'email', 'displayName', 'roleSlug', 'roleName',
+          'permissions', 'isActive', 'totpEnabled', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid', 'email', 'displayName', 'roleSlug', 'roleName',
+          'permissions', 'isActive', 'totpEnabled', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.uid)
+        && isBoundedNonEmptyString(data.email, 254)
+        && isBoundedString(data.displayName, 120)
+        && data.roleSlug in ['super_admin', 'admin', 'support']
+        && isBoundedNonEmptyString(data.roleName, 64)
+        && data.permissions is list && data.permissions.size() <= 30
+        && (data.permissions.size() == 0 || data.permissions[0] is string)
+        && data.isActive is bool
+        && data.totpEnabled is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidForm(data) {
+      return data.keys().hasAll([
+          'id', 'formKey', 'ownerUid', 'userId', 'title', 'description',
+          'fields', 'status', 'successMessage', 'redirectUrl', 'allowedDomains',
+          'spamProtection', 'secretApiKeyPrefix', 'secretApiKeyHash', 'emailConfig',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'formKey', 'ownerUid', 'userId', 'title', 'description',
+          'fields', 'status', 'successMessage', 'redirectUrl', 'allowedDomains',
+          'spamProtection', 'secretApiKeyPrefix', 'secretApiKeyHash', 'emailConfig',
+          'createdAt', 'updatedAt'
+        ])
+        && data.id is number
+        && isValidId(data.formKey) && data.formKey.size() <= 64
+        && isValidId(data.ownerUid)
+        && data.userId is number
+        && isBoundedNonEmptyString(data.title, 160)
+        && isBoundedString(data.description, 1000)
+        && data.fields is list && data.fields.size() <= 100
+        && (data.fields.size() == 0 || data.fields[0] is map)
+        && data.status in ['draft', 'published', 'inactive', 'suspended']
+        && isBoundedString(data.successMessage, 500)
+        && isBoundedString(data.redirectUrl, 500)
+        && data.allowedDomains is list && data.allowedDomains.size() <= 50
+        && (data.allowedDomains.size() == 0 || data.allowedDomains[0] is string)
+        && data.spamProtection is map
+        && isBoundedString(data.secretApiKeyPrefix, 64)
+        && isBoundedString(data.secretApiKeyHash, 128)
+        && data.emailConfig is map
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPublicForm(data) {
+      return data.keys().hasAll([
+          'formKey', 'formId', 'formDocId', 'ownerUid', 'title',
+          'status', 'successMessage', 'redirectUrl', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'formKey', 'formId', 'formDocId', 'ownerUid', 'title',
+          'status', 'successMessage', 'redirectUrl', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.formKey) && data.formKey.size() <= 64
+        && data.formId is number
+        && isValidId(data.formDocId)
+        && isValidId(data.ownerUid)
+        && isBoundedNonEmptyString(data.title, 160)
+        && data.status in ['draft', 'published', 'inactive', 'suspended']
+        && isBoundedString(data.successMessage, 500)
+        && isBoundedString(data.redirectUrl, 500)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSubmission(data) {
+      return data.keys().hasAll([
+          'id', 'formId', 'formDocId', 'formKey', 'formTitle', 'ownerUid',
+          'payload', 'files', 'isRead', 'status', 'emailDeliveryStatus',
+          'sourceIp', 'originDomain', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'formId', 'formDocId', 'formKey', 'formTitle', 'ownerUid',
+          'payload', 'files', 'isRead', 'status', 'emailDeliveryStatus',
+          'sourceIp', 'originDomain', 'createdAt', 'updatedAt'
+        ])
+        && data.id is number
+        && data.formId is number
+        && isValidId(data.formDocId)
+        && isValidId(data.formKey) && data.formKey.size() <= 64
+        && isBoundedString(data.formTitle, 160)
+        && isValidId(data.ownerUid)
+        && data.payload is map
+        && data.files is list && data.files.size() <= 10
+        && (data.files.size() == 0 || data.files[0] is map)
+        && data.isRead is bool
+        && data.status in ['received', 'spam', 'failed']
+        && data.emailDeliveryStatus in ['pending', 'accepted', 'delivered', 'bounced', 'failed', 'disabled']
+        && isBoundedString(data.sourceIp, 64)
+        && isBoundedString(data.originDomain, 255)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidEmailLog(data) {
+      return data.keys().hasAll([
+          'id', 'ownerUid', 'formId', 'recipient', 'sender', 'subject',
+          'status', 'resendMessageId', 'errorMessage', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerUid', 'formId', 'submissionId', 'recipient', 'sender', 'subject',
+          'status', 'resendMessageId', 'errorMessage', 'createdAt', 'updatedAt'
+        ])
+        && data.id is number
+        && isValidId(data.ownerUid)
+        && data.formId is number
+        && (!('submissionId' in data) || data.submissionId == null || data.submissionId is number)
+        && isBoundedNonEmptyString(data.recipient, 254)
+        && isBoundedString(data.sender, 254)
+        && isBoundedString(data.subject, 300)
+        && data.status in ['pending', 'sent', 'delivered', 'bounced', 'failed']
+        && isBoundedString(data.resendMessageId, 128)
+        && isBoundedString(data.errorMessage, 1000)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPlan(data) {
+      return data.keys().hasAll([
+          'id', 'slug', 'name', 'audienceLabel', 'description',
+          'monthlyPriceCents', 'yearlyPriceCents', 'trialDays',
+          'maxForms', 'maxSubmissionsPerMonth', 'maxEmailsPerMonth',
+          'maxApiRequestsPerMin', 'maxStorageMb', 'features',
+          'isActive', 'isArchived', 'sortOrder', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'slug', 'name', 'audienceLabel', 'description',
+          'monthlyPriceCents', 'yearlyPriceCents', 'trialDays',
+          'maxForms', 'maxSubmissionsPerMonth', 'maxEmailsPerMonth',
+          'maxApiRequestsPerMin', 'maxStorageMb', 'features',
+          'isActive', 'isArchived', 'sortOrder', 'createdAt', 'updatedAt'
+        ])
+        && data.id is number
+        && isValidId(data.slug) && data.slug.size() <= 64
+        && isBoundedNonEmptyString(data.name, 80)
+        && isBoundedString(data.audienceLabel, 160)
+        && isBoundedString(data.description, 500)
+        && data.monthlyPriceCents is number && data.monthlyPriceCents >= 0
+        && data.yearlyPriceCents is number && data.yearlyPriceCents >= 0
+        && data.trialDays is number && data.trialDays >= 0
+        && data.maxForms is number && data.maxForms >= 0
+        && data.maxSubmissionsPerMonth is number && data.maxSubmissionsPerMonth >= 0
+        && data.maxEmailsPerMonth is number && data.maxEmailsPerMonth >= 0
+        && data.maxApiRequestsPerMin is number && data.maxApiRequestsPerMin >= 0
+        && data.maxStorageMb is number && data.maxStorageMb >= 0
+        && data.features is map
+        && data.isActive is bool
+        && data.isArchived is bool
+        && data.sortOrder is number
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPayment(data) {
+      return data.keys().hasAll([
+          'id', 'ownerUid', 'userId', 'customerEmail', 'planId', 'planName',
+          'billingCycle', 'amountCents', 'currency', 'provider', 'providerPaymentId',
+          'status', 'refundStatus', 'paymentMethod', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerUid', 'userId', 'customerEmail', 'planId', 'planName',
+          'billingCycle', 'amountCents', 'currency', 'provider', 'providerPaymentId',
+          'status', 'refundStatus', 'paymentMethod', 'cardBrand', 'last4',
+          'cardholderName', 'billingZip', 'upiId', 'bankName', 'createdAt', 'updatedAt'
+        ])
+        && data.id is number
+        && isValidId(data.ownerUid)
+        && data.userId is number
+        && isBoundedNonEmptyString(data.customerEmail, 254)
+        && data.planId is number
+        && isBoundedNonEmptyString(data.planName, 80)
+        && data.billingCycle in ['monthly', 'yearly']
+        && data.amountCents is number && data.amountCents >= 0
+        && isBoundedNonEmptyString(data.currency, 8)
+        && isBoundedNonEmptyString(data.provider, 40)
+        && isBoundedNonEmptyString(data.providerPaymentId, 128)
+        && data.status in ['succeeded', 'failed', 'refunded']
+        && data.refundStatus in ['none', 'refunded']
+        && isBoundedNonEmptyString(data.paymentMethod, 40)
+        && (!('cardBrand' in data) || isBoundedString(data.cardBrand, 40))
+        && (!('last4' in data) || isBoundedString(data.last4, 4))
+        && (!('cardholderName' in data) || isBoundedString(data.cardholderName, 120))
+        && (!('billingZip' in data) || isBoundedString(data.billingZip, 24))
+        && (!('upiId' in data) || isBoundedString(data.upiId, 120))
+        && (!('bankName' in data) || isBoundedString(data.bankName, 120))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidInvoice(data) {
+      return data.keys().hasAll([
+          'id', 'invoiceNumber', 'ownerUid', 'userId', 'customerEmail',
+          'customerName', 'planName', 'billingCycle', 'planDescription',
+          'amountCents', 'currency', 'status', 'periodStart', 'periodEnd',
+          'issuedAt', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'invoiceNumber', 'ownerUid', 'userId', 'customerEmail',
+          'customerName', 'paymentId', 'planName', 'billingCycle', 'planDescription',
+          'amountCents', 'currency', 'status', 'periodStart', 'periodEnd',
+          'issuedAt', 'paymentSnapshot', 'createdAt', 'updatedAt'
+        ])
+        && data.id is number
+        && isBoundedNonEmptyString(data.invoiceNumber, 64)
+        && isValidId(data.ownerUid)
+        && data.userId is number
+        && isBoundedNonEmptyString(data.customerEmail, 254)
+        && isBoundedString(data.customerName, 120)
+        && (!('paymentId' in data) || data.paymentId == null || data.paymentId is number)
+        && isBoundedNonEmptyString(data.planName, 80)
+        && data.billingCycle in ['monthly', 'yearly']
+        && isBoundedString(data.planDescription, 500)
+        && data.amountCents is number && data.amountCents >= 0
+        && isBoundedNonEmptyString(data.currency, 8)
+        && data.status in ['paid', 'void', 'refunded']
+        && isBoundedString(data.periodStart, 64)
+        && isBoundedString(data.periodEnd, 64)
+        && isBoundedString(data.issuedAt, 64)
+        && (!('paymentSnapshot' in data) || data.paymentSnapshot == null || data.paymentSnapshot is map)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSetting(data) {
+      return data.keys().hasAll(['key', 'value', 'updatedAt'])
+        && data.keys().hasOnly(['key', 'value', 'updatedAt'])
+        && isValidId(data.key) && data.key.size() <= 64
+        && data.value is map
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAuditLog(data) {
+      return data.keys().hasAll(['id', 'actorUid', 'actorEmail', 'action', 'targetType', 'targetId', 'details', 'createdAt'])
+        && data.keys().hasOnly(['id', 'actorUid', 'actorEmail', 'action', 'targetType', 'targetId', 'details', 'createdAt'])
+        && data.id is number
+        && isValidId(data.actorUid)
+        && isBoundedNonEmptyString(data.actorEmail, 254)
+        && isBoundedNonEmptyString(data.action, 120)
+        && isBoundedNonEmptyString(data.targetType, 64)
+        && isBoundedString(data.targetId, 128)
+        && isBoundedString(data.details, 1000)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidApiUsageLog(data) {
+      return data.keys().hasAll(['id', 'ownerUid', 'endpoint', 'method', 'statusCode', 'createdAt'])
+        && data.keys().hasOnly(['id', 'ownerUid', 'formId', 'endpoint', 'method', 'statusCode', 'createdAt'])
+        && data.id is number
+        && isValidId(data.ownerUid)
+        && (!('formId' in data) || data.formId == null || data.formId is number)
+        && isBoundedNonEmptyString(data.endpoint, 200)
+        && isBoundedNonEmptyString(data.method, 16)
+        && data.statusCode is number && data.statusCode >= 100 && data.statusCode <= 599
+        && data.createdAt is timestamp;
+    }
+
+    // 1. Users Collection (PII Isolated)
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isSignedIn()
+        && isValidId(userId)
+        && isValidUser(incoming())
+        && incoming().uid == userId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            isOwner(userId)
+            && incoming().status == 'active'
+            && incoming().planId == 1
+            && (!('customMaxForms' in incoming()) || incoming().customMaxForms == null)
+            && (!('customMaxSubmissions' in incoming()) || incoming().customMaxSubmissions == null)
+            && (!('customMaxEmails' in incoming()) || incoming().customMaxEmails == null)
+          )
+        );
+      allow update: if isSignedIn()
+        && isValidId(userId)
+        && isValidUser(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            isOwner(userId)
+            && existing().status == 'active'
+            && (
+              incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoUrl', 'hasPassword', 'updatedAt'])
+              || incoming().diff(existing()).affectedKeys().hasOnly([
+                'planId', 'billingCycle', 'subscriptionStatus',
+                'currentPeriodStart', 'currentPeriodEnd', 'cancelAtPeriodEnd',
+                'provider', 'updatedAt'
+              ])
+            )
+          )
+        );
+      allow delete: if isAdmin() && isValidId(userId);
+    }
+
+    // 2. Trusted Admin Roles Collection
+    match /admins/{uid} {
+      allow get: if isSignedIn() && isValidId(uid) && (isOwner(uid) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isSignedIn()
+        && isValidId(uid)
+        && isValidAdminUser(incoming())
+        && incoming().uid == uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isAdmin();
+      allow update: if isSignedIn()
+        && isValidId(uid)
+        && isValidAdminUser(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && isAdmin();
+      allow delete: if isAdmin() && isValidId(uid);
+    }
+
+    // 3. Forms Collection (Contains Email Routing PII — Owner or Admin Only)
+    match /forms/{formId} {
+      allow get: if isSignedIn() && isValidId(formId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(formId)
+        && isValidForm(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            incoming().ownerUid == request.auth.uid
+            && incoming().status != 'suspended'
+          )
+        );
+      allow update: if isSignedIn()
+        && isValidId(formId)
+        && isValidForm(incoming())
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().formKey == existing().formKey
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            existing().ownerUid == request.auth.uid
+            && existing().status != 'suspended'
+            && incoming().status != 'suspended'
+            && (
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'title', 'description', 'fields', 'status', 'successMessage',
+                'redirectUrl', 'allowedDomains', 'spamProtection', 'emailConfig', 'updatedAt'
+              ])
+              || incoming().diff(existing()).affectedKeys().hasOnly([
+                'secretApiKeyPrefix', 'secretApiKeyHash', 'updatedAt'
+              ])
+            )
+          )
+        );
+      allow delete: if isSignedIn() && isValidId(formId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 4. Public Forms Projection (Non-PII — Allows Public Verification)
+    match /publicForms/{formKey} {
+      allow get: if isValidId(formKey) && (
+        existing().status == 'published'
+        || (isSignedIn() && existing().ownerUid == request.auth.uid)
+        || isAdmin()
+      );
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(formKey)
+        && isValidPublicForm(incoming())
+        && incoming().formKey == formKey
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (isAdmin() || incoming().ownerUid == request.auth.uid);
+      allow update: if isSignedIn()
+        && isValidId(formKey)
+        && isValidPublicForm(incoming())
+        && incoming().formKey == existing().formKey
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            existing().ownerUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'title', 'status', 'successMessage', 'redirectUrl', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isSignedIn() && isValidId(formKey) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 5. Submissions Collection (Owner/Admin Read; Verified Public or Owner Create)
+    match /submissions/{submissionId} {
+      allow get: if isSignedIn() && isValidId(submissionId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isValidId(submissionId)
+        && isValidSubmission(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (isSignedIn() && incoming().ownerUid == request.auth.uid)
+          || (
+            incoming().isRead == false
+            && incoming().status == 'received'
+            && exists(/databases/$(database)/documents/publicForms/$(incoming().formKey))
+            && get(/databases/$(database)/documents/publicForms/$(incoming().formKey)).data.status == 'published'
+            && get(/databases/$(database)/documents/publicForms/$(incoming().formKey)).data.ownerUid == incoming().ownerUid
+            && get(/databases/$(database)/documents/publicForms/$(incoming().formKey)).data.formId == incoming().formId
+          )
+        );
+      allow update: if isSignedIn()
+        && isValidId(submissionId)
+        && isValidSubmission(incoming())
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().formId == existing().formId
+        && incoming().formKey == existing().formKey
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            existing().ownerUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly(['isRead', 'emailDeliveryStatus', 'status', 'updatedAt'])
+          )
+        );
+      allow delete: if isSignedIn() && isValidId(submissionId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 6. Email Logs Collection
+    match /emailLogs/{logId} {
+      allow get: if isSignedIn() && isValidId(logId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(logId)
+        && isValidEmailLog(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (isAdmin() || incoming().ownerUid == request.auth.uid);
+      allow update: if isSignedIn()
+        && isValidId(logId)
+        && isValidEmailLog(incoming())
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            existing().ownerUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'resendMessageId', 'errorMessage', 'updatedAt'])
+          )
+        );
+      allow delete: if isAdmin() && isValidId(logId);
+    }
+
+    // 7. Subscription Plans Collection
+    match /plans/{planId} {
+      allow get: if isSignedIn() && isValidId(planId) && (existing().isActive == true || isAdmin());
+      allow list: if isSignedIn() && (existing().isActive == true || isAdmin());
+      allow create: if isAdmin()
+        && isValidId(planId)
+        && isValidPlan(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isAdmin()
+        && isValidId(planId)
+        && isValidPlan(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(planId);
+    }
+
+    // 8. Payments Collection
+    match /payments/{paymentId} {
+      allow get: if isSignedIn() && isValidId(paymentId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(paymentId)
+        && isValidPayment(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            incoming().ownerUid == request.auth.uid
+            && incoming().refundStatus == 'none'
+          )
+        );
+      allow update: if isAdmin()
+        && isValidId(paymentId)
+        && isValidPayment(incoming())
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    // 9. Invoices Collection
+    match /invoices/{invoiceId} {
+      allow get: if isSignedIn() && isValidId(invoiceId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(invoiceId)
+        && isValidInvoice(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (isAdmin() || incoming().ownerUid == request.auth.uid);
+      allow update: if isAdmin()
+        && isValidId(invoiceId)
+        && isValidInvoice(incoming())
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    // 10. Platform Settings Collection
+    match /settings/{settingKey} {
+      allow get: if isSignedIn() && isValidId(settingKey) && (
+        isAdmin()
+        || settingKey in ['platform_general', 'invoice_template', 'email_provider_public', 'payment_gateways']
+      );
+      allow list: if isAdmin();
+      allow create: if isAdmin()
+        && isValidId(settingKey)
+        && isValidSetting(incoming())
+        && incoming().key == settingKey
+        && incoming().updatedAt == request.time;
+      allow update: if isAdmin()
+        && isValidId(settingKey)
+        && isValidSetting(incoming())
+        && incoming().key == existing().key
+        && incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(settingKey);
+    }
+
+    // 11. Immutable Audit Logs Collection
+    match /auditLogs/{logId} {
+      allow get: if isAdmin() && isValidId(logId);
+      allow list: if isAdmin();
+      allow create: if isAdmin()
+        && isValidId(logId)
+        && isValidAuditLog(incoming())
+        && incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // 12. API Usage Logs Collection
+    match /apiUsageLogs/{logId} {
+      allow get: if isSignedIn() && isValidId(logId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(logId)
+        && isValidApiUsageLog(incoming())
+        && incoming().createdAt == request.time
+        && (isAdmin() || incoming().ownerUid == request.auth.uid);
+      allow update: if false;
+      allow delete: if isAdmin() && isValidId(logId);
+    }
+  }
+}

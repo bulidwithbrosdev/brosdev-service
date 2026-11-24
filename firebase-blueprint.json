@@ -1,0 +1,312 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Customer or platform account profile, subscription summary, and quota settings.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "numericId": { "type": "number" },
+        "email": { "type": "string", "format": "email", "maxLength": 254 },
+        "displayName": { "type": "string", "maxLength": 120 },
+        "photoUrl": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "enum": ["active", "suspended"] },
+        "planId": { "type": "number" },
+        "billingCycle": { "type": "string", "enum": ["monthly", "yearly"] },
+        "subscriptionStatus": { "type": "string", "enum": ["active", "canceled", "trialing"] },
+        "currentPeriodStart": { "type": "string", "maxLength": 64 },
+        "currentPeriodEnd": { "type": "string", "maxLength": 64 },
+        "cancelAtPeriodEnd": { "type": "boolean" },
+        "provider": { "type": "string", "maxLength": 40 },
+        "customMaxForms": { "type": "number" },
+        "customMaxSubmissions": { "type": "number" },
+        "customMaxEmails": { "type": "number" },
+        "authProvider": { "type": "string", "enum": ["email", "google"] },
+        "hasPassword": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "numericId", "email", "displayName", "photoUrl", "status", "planId", "billingCycle", "subscriptionStatus", "currentPeriodStart", "currentPeriodEnd", "cancelAtPeriodEnd", "provider", "authProvider", "hasPassword", "createdAt", "updatedAt"]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Trusted RBAC administrator assignment document keyed by Firebase UID.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "format": "email", "maxLength": 254 },
+        "displayName": { "type": "string", "maxLength": 120 },
+        "roleSlug": { "type": "string", "enum": ["super_admin", "admin", "support"] },
+        "roleName": { "type": "string", "maxLength": 64 },
+        "permissions": { "type": "array" },
+        "isActive": { "type": "boolean" },
+        "totpEnabled": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "displayName", "roleSlug", "roleName", "permissions", "isActive", "totpEnabled", "createdAt", "updatedAt"]
+    },
+    "Form": {
+      "title": "Form",
+      "description": "Customer form definition, field layout, spam rules, and email routing configuration.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "formKey": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "number" },
+        "title": { "type": "string", "maxLength": 160 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "fields": { "type": "array" },
+        "status": { "type": "string", "enum": ["draft", "published", "inactive", "suspended"] },
+        "successMessage": { "type": "string", "maxLength": 500 },
+        "redirectUrl": { "type": "string", "maxLength": 500 },
+        "allowedDomains": { "type": "array" },
+        "spamProtection": { "type": "object" },
+        "secretApiKeyPrefix": { "type": "string", "maxLength": 64 },
+        "secretApiKeyHash": { "type": "string", "maxLength": 128 },
+        "emailConfig": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "formKey", "ownerUid", "userId", "title", "description", "fields", "status", "successMessage", "redirectUrl", "allowedDomains", "spamProtection", "secretApiKeyPrefix", "secretApiKeyHash", "emailConfig", "createdAt", "updatedAt"]
+    },
+    "PublicForm": {
+      "title": "PublicForm",
+      "description": "Non-PII public projection of a published form for external form submission verification.",
+      "type": "object",
+      "properties": {
+        "formKey": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "formId": { "type": "number" },
+        "formDocId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "maxLength": 160 },
+        "status": { "type": "string", "enum": ["draft", "published", "inactive", "suspended"] },
+        "successMessage": { "type": "string", "maxLength": 500 },
+        "redirectUrl": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["formKey", "formId", "formDocId", "ownerUid", "title", "status", "successMessage", "redirectUrl", "createdAt", "updatedAt"]
+    },
+    "Submission": {
+      "title": "Submission",
+      "description": "Submitted form payload and email delivery status.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "formId": { "type": "number" },
+        "formDocId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "formKey": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "formTitle": { "type": "string", "maxLength": 160 },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "payload": { "type": "object" },
+        "files": { "type": "array" },
+        "isRead": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["received", "spam", "failed"] },
+        "emailDeliveryStatus": { "type": "string", "enum": ["pending", "accepted", "delivered", "bounced", "failed", "disabled"] },
+        "sourceIp": { "type": "string", "maxLength": 64 },
+        "originDomain": { "type": "string", "maxLength": 255 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "formId", "formDocId", "formKey", "formTitle", "ownerUid", "payload", "files", "isRead", "status", "emailDeliveryStatus", "sourceIp", "originDomain", "createdAt", "updatedAt"]
+    },
+    "EmailLog": {
+      "title": "EmailLog",
+      "description": "Outbound Resend email delivery log entry.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "formId": { "type": "number" },
+        "submissionId": { "type": "number" },
+        "recipient": { "type": "string", "maxLength": 254 },
+        "sender": { "type": "string", "maxLength": 254 },
+        "subject": { "type": "string", "maxLength": 300 },
+        "status": { "type": "string", "enum": ["pending", "sent", "delivered", "bounced", "failed"] },
+        "resendMessageId": { "type": "string", "maxLength": 128 },
+        "errorMessage": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerUid", "formId", "recipient", "sender", "subject", "status", "resendMessageId", "errorMessage", "createdAt", "updatedAt"]
+    },
+    "Plan": {
+      "title": "Plan",
+      "description": "Subscription tier definition and quota limits.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "slug": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "maxLength": 80 },
+        "audienceLabel": { "type": "string", "maxLength": 160 },
+        "description": { "type": "string", "maxLength": 500 },
+        "monthlyPriceCents": { "type": "number" },
+        "yearlyPriceCents": { "type": "number" },
+        "trialDays": { "type": "number" },
+        "maxForms": { "type": "number" },
+        "maxSubmissionsPerMonth": { "type": "number" },
+        "maxEmailsPerMonth": { "type": "number" },
+        "maxApiRequestsPerMin": { "type": "number" },
+        "maxStorageMb": { "type": "number" },
+        "features": { "type": "object" },
+        "isActive": { "type": "boolean" },
+        "isArchived": { "type": "boolean" },
+        "sortOrder": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "slug", "name", "audienceLabel", "description", "monthlyPriceCents", "yearlyPriceCents", "trialDays", "maxForms", "maxSubmissionsPerMonth", "maxEmailsPerMonth", "maxApiRequestsPerMin", "maxStorageMb", "features", "isActive", "isArchived", "sortOrder", "createdAt", "updatedAt"]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "BrosDev Pay transaction record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "number" },
+        "customerEmail": { "type": "string", "maxLength": 254 },
+        "planId": { "type": "number" },
+        "planName": { "type": "string", "maxLength": 80 },
+        "billingCycle": { "type": "string", "enum": ["monthly", "yearly"] },
+        "amountCents": { "type": "number" },
+        "currency": { "type": "string", "maxLength": 8 },
+        "provider": { "type": "string", "maxLength": 40 },
+        "providerPaymentId": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["succeeded", "failed", "refunded"] },
+        "refundStatus": { "type": "string", "enum": ["none", "refunded"] },
+        "paymentMethod": { "type": "string", "maxLength": 40 },
+        "cardBrand": { "type": "string", "maxLength": 40 },
+        "last4": { "type": "string", "maxLength": 4 },
+        "cardholderName": { "type": "string", "maxLength": 120 },
+        "billingZip": { "type": "string", "maxLength": 24 },
+        "upiId": { "type": "string", "maxLength": 120 },
+        "bankName": { "type": "string", "maxLength": 120 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerUid", "userId", "customerEmail", "planId", "planName", "billingCycle", "amountCents", "currency", "provider", "providerPaymentId", "status", "refundStatus", "paymentMethod", "createdAt", "updatedAt"]
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "Billing invoice record for a BrosDev Forms subscription.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "invoiceNumber": { "type": "string", "maxLength": 64 },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "number" },
+        "customerEmail": { "type": "string", "maxLength": 254 },
+        "customerName": { "type": "string", "maxLength": 120 },
+        "paymentId": { "type": "number" },
+        "planName": { "type": "string", "maxLength": 80 },
+        "billingCycle": { "type": "string", "enum": ["monthly", "yearly"] },
+        "planDescription": { "type": "string", "maxLength": 500 },
+        "amountCents": { "type": "number" },
+        "currency": { "type": "string", "maxLength": 8 },
+        "status": { "type": "string", "enum": ["paid", "void", "refunded"] },
+        "periodStart": { "type": "string", "maxLength": 64 },
+        "periodEnd": { "type": "string", "maxLength": 64 },
+        "issuedAt": { "type": "string", "maxLength": 64 },
+        "paymentSnapshot": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "invoiceNumber", "ownerUid", "userId", "customerEmail", "customerName", "planName", "billingCycle", "planDescription", "amountCents", "currency", "status", "periodStart", "periodEnd", "issuedAt", "createdAt", "updatedAt"]
+    },
+    "PlatformSetting": {
+      "title": "PlatformSetting",
+      "description": "Platform configuration document (invoice template, email sender metadata, API limits, general settings).",
+      "type": "object",
+      "properties": {
+        "key": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "value": { "type": "object" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["key", "value", "updatedAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable Super Admin audit log entry.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "actorUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "actorEmail": { "type": "string", "maxLength": 254 },
+        "action": { "type": "string", "maxLength": 120 },
+        "targetType": { "type": "string", "maxLength": 64 },
+        "targetId": { "type": "string", "maxLength": 128 },
+        "details": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "actorUid", "actorEmail", "action", "targetType", "targetId", "details", "createdAt"]
+    },
+    "ApiUsageLog": {
+      "title": "ApiUsageLog",
+      "description": "API activity log entry for usage monitoring.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "formId": { "type": "number" },
+        "endpoint": { "type": "string", "maxLength": 200 },
+        "method": { "type": "string", "maxLength": 16 },
+        "statusCode": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerUid", "endpoint", "method", "statusCode", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Private user profile, subscription state, and custom quota settings."
+    },
+    "/admins/{uid}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Trusted administrator RBAC role document."
+    },
+    "/forms/{formId}": {
+      "schema": { "$ref": "#/entities/Form" },
+      "description": "Customer form schema, email configuration, and API key metadata."
+    },
+    "/publicForms/{formKey}": {
+      "schema": { "$ref": "#/entities/PublicForm" },
+      "description": "Non-PII public projection of published forms."
+    },
+    "/submissions/{submissionId}": {
+      "schema": { "$ref": "#/entities/Submission" },
+      "description": "Form submissions with owner isolation and verified public creation."
+    },
+    "/emailLogs/{logId}": {
+      "schema": { "$ref": "#/entities/EmailLog" },
+      "description": "Outbound Resend email delivery logs."
+    },
+    "/plans/{planId}": {
+      "schema": { "$ref": "#/entities/Plan" },
+      "description": "Platform subscription plans."
+    },
+    "/payments/{paymentId}": {
+      "schema": { "$ref": "#/entities/Payment" },
+      "description": "BrosDev Pay payment transactions."
+    },
+    "/invoices/{invoiceId}": {
+      "schema": { "$ref": "#/entities/Invoice" },
+      "description": "Billing invoices."
+    },
+    "/settings/{settingKey}": {
+      "schema": { "$ref": "#/entities/PlatformSetting" },
+      "description": "Platform configuration documents."
+    },
+    "/auditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Immutable admin audit log ledger."
+    },
+    "/apiUsageLogs/{logId}": {
+      "schema": { "$ref": "#/entities/ApiUsageLog" },
+      "description": "API usage metrics."
+    }
+  }
+}

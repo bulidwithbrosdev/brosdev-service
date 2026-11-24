@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { AuthGate } from './components/AuthGate';
 import { CustomerPortal } from './components/customer/CustomerPortal';
 import { AdminPortal } from './components/admin/AdminPortal';
+import { ErrorBoundary } from './components/shared/ErrorBoundary';
 
 function AppShell() {
   const { isAuthenticated, workspace, loading } = useAuth();
@@ -51,8 +52,10 @@ function AppShell() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppShell />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <AppShell />
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }

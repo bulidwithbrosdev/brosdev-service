@@ -199,26 +199,20 @@ export const FormBuilderView: React.FC<{
     setPreviewSubmitting(true);
     setPreviewSubmitResult(null);
     try {
-      const res = await fetch(`/api/submit/${form.formKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(previewValues),
+      const json = await apiRequest<{ message?: string; emailDeliveryStatus?: string }>(
+        `/api/submit/${form.formKey}`,
+        {
+          method: 'POST',
+          body: previewValues,
+        }
+      );
+      setPreviewSubmitResult({
+        ok: true,
+        message: `${json.message || form.successMessage} (Email status: ${json.emailDeliveryStatus || 'processed'})`,
       });
-      const json = await res.json().catch(() => ({}));
-      if (res.ok) {
-        setPreviewSubmitResult({
-          ok: true,
-          message: `${json.message || form.successMessage} (Email status: ${json.emailDeliveryStatus || 'processed'})`,
-        });
-        setPreviewValues({});
-      } else {
-        setPreviewSubmitResult({
-          ok: false,
-          message: json.error || 'Submission rejected',
-        });
-      }
-    } catch {
-      setPreviewSubmitResult({ ok: false, message: 'Network error sending test submission' });
+      setPreviewValues({});
+    } catch (err: any) {
+      setPreviewSubmitResult({ ok: false, message: err?.message || 'Submission rejected' });
     } finally {
       setPreviewSubmitting(false);
     }

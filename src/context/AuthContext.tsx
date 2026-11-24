@@ -1,14 +1,15 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { onAuthStateChanged, signInWithPopup, signOut, User } from 'firebase/auth';
-import { auth, googleAuthProvider } from '../lib/firebase';
 import {
-  apiRequest,
-  buildApiUrl,
-  extractErrorMessage,
-  getInMemoryAuthToken,
-  parseApiResponse,
-  setInMemoryAuthToken,
-} from '../lib/api';
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signOut,
+  updateProfile,
+  User,
+} from 'firebase/auth';
+import { auth, googleAuthProvider } from '../lib/firebase';
+import { apiRequest, extractErrorMessage } from '../lib/api';
 import { WorkspaceMe } from '../types';
 
 interface AuthContextValue {
@@ -27,9 +28,35 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function formatFirebaseAuthError(err: any, fallback: string): string {
+  const code = err?.code || '';
+  if (code === 'auth/unauthorized-domain') {
+    const currentHost =
+      typeof window !== 'undefined' ? window.location.hostname : 'this domain';
+    const projectId = auth.app.options.projectId || 'serious-airlock-smn89';
+    return `Google Sign-In is not authorized for "${currentHost}" yet. Add "${currentHost}" under Firebase Console → Authentication → Settings → Authorized domains (project: ${projectId}).`;
+  }
+  if (code === 'auth/operation-not-allowed') {
+    const projectId = auth.app.options.projectId || 'serious-airlock-smn89';
+    return `Email & Password authentication is not enabled yet in Firebase Console. Enable it under Firebase Console → Authentication → Sign-in method → Email/Password (project: ${projectId}), or continue with Google.`;
+  }
+  if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
+    return 'Invalid email or password.';
+  }
+  if (code === 'auth/email-already-in-use') {
+    return 'An account with this email address already exists. Please sign in instead.';
+  }
+  if (code === 'auth/weak-password') {
+    return 'Password is too weak. Please use at least 8 characters.';
+  }
+  if (code === 'auth/popup-blocked') {
+    return 'Your browser blocked the Google Sign-In popup. Please allow popups for this site and try again.';
+  }
+  return extractErrorMessage(err, fallback);
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
-  const [hasLocalSession, setHasLocalSession] = useState(false);
   const [workspace, setWorkspace] = useState<WorkspaceMe | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +67,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const data = await apiRequest<WorkspaceMe>('/api/me');
       setWorkspace(data);
     } catch (err: unknown) {
-      setError(extractErrorMessage(err, 'Unable to load workspace profile.'));
+      setError(extractErrorMessage(err, 'Unable to load workspace profile from Firestore.'));
       setWorkspace(null);
     }
   }, []);
@@ -49,10 +76,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const unsub = onAuthStateChanged(auth, async (user) => {
       setFirebaseUser(user);
       if (user) {
-        setInMemoryAuthToken(null);
-        setHasLocalSession(false);
         await fetchWorkspace();
-      } else if (!getInMemoryAuthToken()) {
+      } else {
         setWorkspace(null);
       }
       setLoading(false);
@@ -63,98 +88,50 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signInWithGoogle = useCallback(async () => {
     setError(null);
     try {
-      setInMemoryAuthToken(null);
-      setHasLocalSession(false);
       await signInWithPopup(auth, googleAuthProvider);
     } catch (err: any) {
-      if (err?.code === 'auth/popup-closed-by-user') {
-        return;
-      }
-      if (err?.code === 'auth/unauthorized-domain') {
-        const currentHost =
-          typeof window !== 'undefined' ? window.location.hostname : 'this domain';
-        const projectId = auth.app.options.projectId || 'your Firebase project';
-        setError(
-          `Google Sign-In is not authorized for "${currentHost}" yet. Add "${currentHost}" under Firebase Console → Authentication → Settings → Authorized domains (project: ${projectId}), or sign in with Email & Password above.`
-        );
-        return;
-      }
-      if (err?.code === 'auth/popup-blocked') {
-        setError(
-          'Your browser blocked the Google Sign-In popup. Please allow popups for this site or sign in with Email & Password.'
-        );
-        return;
-      }
-      setError(extractErrorMessage(err, 'Google Sign-In failed. Please try again.'));
+      if (err?.code === 'auth/popup-closed-by-user') return;
+      setError(formatFirebaseAuthError(err, 'Google Sign-In failed. Please try again.'));
     }
   }, []);
 
-  const signInWithEmail = useCallback(
-    async (email: string, password: string) => {
-      setError(null);
-      try {
-        const res = await fetch(buildApiUrl('/api/auth/login'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({ email, password }),
-        });
-        const data = await parseApiResponse<{ token?: string }>(
-          res,
-          'Invalid email or password.'
-        );
-        if (!data?.token) {
-          throw new Error('Authentication server did not return a session token.');
-        }
-        setInMemoryAuthToken(data.token);
-        setHasLocalSession(true);
-        await fetchWorkspace();
-      } catch (err: unknown) {
-        const message = extractErrorMessage(err, 'Sign-in failed. Please try again.');
-        setError(message);
-        throw new Error(message);
-      }
-    },
-    [fetchWorkspace]
-  );
+  const signInWithEmail = useCallback(async (email: string, password: string) => {
+    setError(null);
+    try {
+      await signInWithEmailAndPassword(auth, email.trim(), password);
+    } catch (err: any) {
+      const msg = formatFirebaseAuthError(err, 'Sign-in failed. Please try again.');
+      setError(msg);
+      throw new Error(msg);
+    }
+  }, []);
 
   const registerWithEmail = useCallback(
     async (email: string, password: string, displayName: string) => {
       setError(null);
       try {
-        const res = await fetch(buildApiUrl('/api/auth/register'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({ email, password, displayName }),
-        });
-        const data = await parseApiResponse<{ token?: string }>(
-          res,
-          'Account creation failed.'
-        );
-        if (!data?.token) {
-          throw new Error('Authentication server did not return a session token.');
+        const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+        if (displayName.trim()) {
+          await updateProfile(cred.user, { displayName: displayName.trim() });
         }
-        setInMemoryAuthToken(data.token);
-        setHasLocalSession(true);
         await fetchWorkspace();
-      } catch (err: unknown) {
-        const message = extractErrorMessage(err, 'Account creation failed. Please try again.');
-        setError(message);
-        throw new Error(message);
+      } catch (err: any) {
+        const msg = formatFirebaseAuthError(err, 'Account creation failed. Please try again.');
+        setError(msg);
+        throw new Error(msg);
       }
     },
     [fetchWorkspace]
   );
 
   const logout = useCallback(async () => {
-    setInMemoryAuthToken(null);
-    setHasLocalSession(false);
     if (auth.currentUser) {
       await signOut(auth);
     }
     setWorkspace(null);
   }, []);
 
-  const isAuthenticated = Boolean((firebaseUser || hasLocalSession) && workspace);
+  const isAuthenticated = Boolean(firebaseUser && workspace);
 
   return (
     <AuthContext.Provider

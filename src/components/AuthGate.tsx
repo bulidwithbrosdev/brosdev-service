@@ -236,8 +236,8 @@ export const AuthGate: React.FC<{ isAdminRoute: boolean }> = ({ isAdminRoute }) 
             </button>
 
             <p className="text-[11px] text-[#737373] mt-6 leading-relaxed">
-              Protected by salted scrypt password hashing, Firebase Authentication, and PostgreSQL
-              server-side access enforcement.
+              Protected by Firebase Authentication, Cloud Firestore security rules, and server-side
+              Resend email delivery.
             </p>
           </div>
         </div>

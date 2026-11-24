@@ -145,20 +145,11 @@ form.addEventListener('submit', async (event) => {
     setTestRunning(true);
     setTestOutput(null);
     try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        'Idempotency-Key': `test_${Date.now()}`,
-      };
-      if (secretKey) headers['X-API-Key'] = secretKey;
-
-      const res = await fetch(`/api/submit/${form.formKey}`, {
+      const data = await apiRequest(`/api/submit/${form.formKey}`, {
         method: 'POST',
-        headers,
-        body: JSON.stringify(sampleJsonObj),
+        body: sampleJsonObj,
       });
-      const data = await res.json().catch(() => ({}));
-      setTestOutput(JSON.stringify({ httpStatus: res.status, ...data }, null, 2));
+      setTestOutput(JSON.stringify({ httpStatus: 200, ...data }, null, 2));
     } catch (err: any) {
       setTestOutput(JSON.stringify({ error: err.message }, null, 2));
     } finally {
