@@ -4,19 +4,15 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "/api/index"
+      "source": "/submit/:formKey",
+      "destination": "/api/submit/:formKey"
     },
     {
-      "source": "/submit/(.*)",
-      "destination": "/api/index"
+      "source": "/embed/:formKey",
+      "destination": "/api/embed/:formKey"
     },
     {
-      "source": "/embed/(.*)",
-      "destination": "/api/index"
-    },
-    {
-      "source": "/(.*)",
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
   ]
