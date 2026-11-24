@@ -1,0 +1,23 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/submit/(.*)",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/embed/(.*)",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/((?!api/|submit/|embed/|assets/|favicon\\.ico).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

@@ -146,6 +146,12 @@ authRouter.post('/auth/register', async (req: Request, res: Response) => {
       },
     });
   } catch (err: any) {
+    if (err?.code === '42P01' || err?.cause?.code === '42P01') {
+      return res.status(503).json({
+        error:
+          'Database schema is not initialized yet. Run "npx drizzle-kit push --config=src/db/drizzle.config.ts" against your DATABASE_URL.',
+      });
+    }
     return res.status(400).json({ error: err.message || 'Registration failed' });
   }
 });
@@ -186,8 +192,14 @@ authRouter.post('/auth/login', async (req: Request, res: Response) => {
         displayName: user.displayName,
       },
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error('POST /api/auth/login failed:', err);
+    if (err?.code === '42P01' || err?.cause?.code === '42P01') {
+      return res.status(503).json({
+        error:
+          'Database schema is not initialized yet. Run "npx drizzle-kit push --config=src/db/drizzle.config.ts" against your DATABASE_URL.',
+      });
+    }
     return res.status(500).json({ error: 'Sign in failed. Please try again.' });
   }
 });
