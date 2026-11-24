@@ -57,13 +57,14 @@ service cloud.firestore {
           'hasPassword', 'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
-          'uid', 'numericId', 'email', 'displayName', 'photoUrl', 'status',
+          'uid', 'accountId', 'numericId', 'email', 'displayName', 'photoUrl', 'status',
           'planId', 'billingCycle', 'subscriptionStatus', 'currentPeriodStart',
           'currentPeriodEnd', 'cancelAtPeriodEnd', 'provider', 'customMaxForms',
           'customMaxSubmissions', 'customMaxEmails', 'authProvider', 'hasPassword',
           'createdAt', 'updatedAt'
         ])
         && isValidId(data.uid)
+        && (!('accountId' in data) || (data.accountId is string && data.accountId.size() >= 4 && data.accountId.size() <= 32 && data.accountId.matches('^[a-z0-9_\\-]+$')))
         && data.numericId is number
         && isBoundedNonEmptyString(data.email, 254)
         && isBoundedString(data.displayName, 120)
@@ -118,7 +119,7 @@ service cloud.firestore {
           'id', 'formKey', 'ownerUid', 'userId', 'title', 'description',
           'fields', 'status', 'successMessage', 'redirectUrl', 'allowedDomains',
           'spamProtection', 'secretApiKeyPrefix', 'secretApiKeyHash', 'emailConfig',
-          'createdAt', 'updatedAt'
+          'removeBranding', 'webhookUrl', 'createdAt', 'updatedAt'
         ])
         && data.id is number
         && isValidId(data.formKey) && data.formKey.size() <= 64
@@ -137,6 +138,8 @@ service cloud.firestore {
         && isBoundedString(data.secretApiKeyPrefix, 64)
         && isBoundedString(data.secretApiKeyHash, 128)
         && data.emailConfig is map
+        && (!('removeBranding' in data) || data.removeBranding is bool)
+        && (!('webhookUrl' in data) || isBoundedString(data.webhookUrl, 500))
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -147,17 +150,27 @@ service cloud.firestore {
           'status', 'successMessage', 'redirectUrl', 'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
-          'formKey', 'formId', 'formDocId', 'ownerUid', 'title',
-          'status', 'successMessage', 'redirectUrl', 'createdAt', 'updatedAt'
+          'formKey', 'formId', 'formDocId', 'ownerUid', 'title', 'description',
+          'fields', 'status', 'successMessage', 'redirectUrl', 'allowedDomains',
+          'spamProtection', 'secretApiKeyHash', 'routingToken', 'routingKeyId',
+          'removeBranding', 'createdAt', 'updatedAt'
         ])
         && isValidId(data.formKey) && data.formKey.size() <= 64
         && data.formId is number
         && isValidId(data.formDocId)
         && isValidId(data.ownerUid)
         && isBoundedNonEmptyString(data.title, 160)
+        && (!('description' in data) || isBoundedString(data.description, 1000))
+        && (!('fields' in data) || (data.fields is list && data.fields.size() <= 100 && (data.fields.size() == 0 || data.fields[0] is map)))
         && data.status in ['draft', 'published', 'inactive', 'suspended']
         && isBoundedString(data.successMessage, 500)
         && isBoundedString(data.redirectUrl, 500)
+        && (!('allowedDomains' in data) || (data.allowedDomains is list && data.allowedDomains.size() <= 50 && (data.allowedDomains.size() == 0 || data.allowedDomains[0] is string)))
+        && (!('spamProtection' in data) || data.spamProtection is map)
+        && (!('secretApiKeyHash' in data) || isBoundedString(data.secretApiKeyHash, 128))
+        && (!('routingToken' in data) || isBoundedString(data.routingToken, 8000))
+        && (!('routingKeyId' in data) || isBoundedString(data.routingKeyId, 32))
+        && (!('removeBranding' in data) || data.removeBranding is bool)
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -353,6 +366,28 @@ service cloud.firestore {
         && data.createdAt is timestamp;
     }
 
+    function isValidTeamMember(data) {
+      return data.keys().hasAll([
+          'id', 'ownerUid', 'accountId', 'memberEmail', 'memberName',
+          'role', 'status', 'invitedByEmail', 'inviteToken', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerUid', 'accountId', 'memberEmail', 'memberName',
+          'role', 'status', 'invitedByEmail', 'inviteToken', 'createdAt', 'updatedAt'
+        ])
+        && data.id is number
+        && isValidId(data.ownerUid)
+        && data.accountId is string && data.accountId.size() >= 4 && data.accountId.size() <= 32 && data.accountId.matches('^[a-z0-9_\\-]+$')
+        && isBoundedNonEmptyString(data.memberEmail, 254)
+        && isBoundedNonEmptyString(data.memberName, 120)
+        && data.role in ['admin', 'editor', 'viewer']
+        && data.status in ['invited', 'active', 'revoked']
+        && isBoundedNonEmptyString(data.invitedByEmail, 254)
+        && isBoundedNonEmptyString(data.inviteToken, 64)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
     // 1. Users Collection (PII Isolated)
     match /users/{userId} {
       allow get: if isSignedIn() && isValidId(userId) && (isOwner(userId) || isAdmin());
@@ -387,6 +422,7 @@ service cloud.firestore {
             && existing().status == 'active'
             && (
               incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoUrl', 'hasPassword', 'updatedAt'])
+              || (!('accountId' in existing()) && incoming().diff(existing()).affectedKeys().hasOnly(['accountId', 'updatedAt']))
               || incoming().diff(existing()).affectedKeys().hasOnly([
                 'planId', 'billingCycle', 'subscriptionStatus',
                 'currentPeriodStart', 'currentPeriodEnd', 'cancelAtPeriodEnd',
@@ -451,7 +487,8 @@ service cloud.firestore {
             && (
               incoming().diff(existing()).affectedKeys().hasOnly([
                 'title', 'description', 'fields', 'status', 'successMessage',
-                'redirectUrl', 'allowedDomains', 'spamProtection', 'emailConfig', 'updatedAt'
+                'redirectUrl', 'allowedDomains', 'spamProtection', 'emailConfig',
+                'removeBranding', 'webhookUrl', 'updatedAt'
               ])
               || incoming().diff(existing()).affectedKeys().hasOnly([
                 'secretApiKeyPrefix', 'secretApiKeyHash', 'updatedAt'
@@ -465,7 +502,8 @@ service cloud.firestore {
     // 4. Public Forms Projection (Non-PII — Allows Public Verification)
     match /publicForms/{formKey} {
       allow get: if isValidId(formKey) && (
-        existing().status == 'published'
+        resource == null
+        || existing().status == 'published'
         || (isSignedIn() && existing().ownerUid == request.auth.uid)
         || isAdmin()
       );
@@ -489,7 +527,9 @@ service cloud.firestore {
           || (
             existing().ownerUid == request.auth.uid
             && incoming().diff(existing()).affectedKeys().hasOnly([
-              'title', 'status', 'successMessage', 'redirectUrl', 'updatedAt'
+              'title', 'description', 'fields', 'status', 'successMessage', 'redirectUrl',
+              'allowedDomains', 'spamProtection', 'secretApiKeyHash', 'routingToken',
+              'routingKeyId', 'removeBranding', 'updatedAt'
             ])
           )
         );
@@ -664,6 +704,49 @@ service cloud.firestore {
         && (isAdmin() || incoming().ownerUid == request.auth.uid);
       allow update: if false;
       allow delete: if isAdmin() && isValidId(logId);
+    }
+
+    // 13. Team Members Collection (Business Plan Workspace Collaboration)
+    match /teamMembers/{memberId} {
+      allow get: if isSignedIn() && isValidId(memberId) && (
+        existing().ownerUid == request.auth.uid
+        || (request.auth.token.email_verified == true && existing().memberEmail == request.auth.token.email)
+        || isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        existing().ownerUid == request.auth.uid
+        || (request.auth.token.email_verified == true && existing().memberEmail == request.auth.token.email)
+        || isAdmin()
+      );
+      allow create: if isSignedIn()
+        && isValidId(memberId)
+        && isValidTeamMember(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (isAdmin() || incoming().ownerUid == request.auth.uid);
+      allow update: if isSignedIn()
+        && isValidId(memberId)
+        && isValidTeamMember(incoming())
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().accountId == existing().accountId
+        && incoming().memberEmail == existing().memberEmail
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            existing().ownerUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly(['memberName', 'role', 'status', 'updatedAt'])
+          )
+          || (
+            request.auth.token.email_verified == true
+            && existing().memberEmail == request.auth.token.email
+            && existing().status == 'invited'
+            && incoming().status == 'active'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          )
+        );
+      allow delete: if isSignedIn() && isValidId(memberId) && (existing().ownerUid == request.auth.uid || isAdmin());
     }
   }
 }

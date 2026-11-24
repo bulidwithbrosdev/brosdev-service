@@ -15,10 +15,16 @@ import {
   X,
   CheckCircle2,
   Send,
+  Lock,
 } from 'lucide-react';
 import { apiRequest } from '../../lib/api';
 import { FieldType, FormFieldConfig, FormRecord } from '../../types';
 import { useAuth } from '../../context/AuthContext';
+import {
+  hasPlanFeature,
+  isAdvancedFieldType,
+  type PlanLockKey,
+} from '../../lib/planLimits';
 
 const FIELD_PALETTE: Array<{ type: FieldType; label: string; category: string }> = [
   { type: 'short_text', label: 'Short Text', category: 'Inputs' },
@@ -78,8 +84,14 @@ export const FormBuilderView: React.FC<{
   formId: number;
   onBack: () => void;
   onOpenIntegration: (form: FormRecord) => void;
-}> = ({ formId, onBack, onOpenIntegration }) => {
+  onRequestUpgrade: (key: PlanLockKey) => void;
+}> = ({ formId, onBack, onOpenIntegration, onRequestUpgrade }) => {
   const { workspace } = useAuth();
+  const canAdvancedBuilder = hasPlanFeature(workspace, 'advancedBuilder');
+  const canMultipleRecipients = hasPlanFeature(workspace, 'multipleRecipients');
+  const canCustomEmail = hasPlanFeature(workspace, 'customEmailTemplates');
+  const canRemoveBranding = hasPlanFeature(workspace, 'removeBranding');
+  const canWebhooks = hasPlanFeature(workspace, 'webhooks');
   const [form, setForm] = useState<FormRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -141,6 +153,8 @@ export const FormBuilderView: React.FC<{
           allowedDomains: form.allowedDomains,
           spamProtection: form.spamProtection,
           emailConfig: form.emailConfig,
+          removeBranding: Boolean(form.removeBranding),
+          webhookUrl: form.webhookUrl || '',
         },
       });
       setForm(res.form);
@@ -155,6 +169,10 @@ export const FormBuilderView: React.FC<{
 
   const addField = (type: FieldType) => {
     if (!form) return;
+    if (!canAdvancedBuilder && isAdvancedFieldType(type)) {
+      onRequestUpgrade('advancedBuilder');
+      return;
+    }
     const field = createDefaultField(type);
     const nextFields = [...form.fields];
     const submitIdx = nextFields.findIndex((f) => f.type === 'submit');
@@ -230,7 +248,10 @@ export const FormBuilderView: React.FC<{
   const emailCapableFields = form.fields.filter(
     (f) => f.type === 'email' || f.type === 'short_text'
   );
-  const verifiedSender = workspace?.platformEmailSender?.defaultSenderEmail || 'forms@brosdev.xyz';
+  const verifiedSender =
+    workspace?.user.senderEmail ||
+    workspace?.platformEmailSender?.defaultSenderEmail ||
+    'forms@brosdev.info';
 
   return (
     <div className="space-y-4">
@@ -467,24 +488,51 @@ export const FormBuilderView: React.FC<{
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
           {/* Left Field Palette */}
           <div className="lg:col-span-3 bg-white border border-[#E5E5E5] rounded-lg p-4">
-            <h3 className="text-xs font-bold text-[#111111] mb-3">Field Library</h3>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-xs font-bold text-[#111111]">Field Library</h3>
+              {!canAdvancedBuilder && (
+                <button
+                  type="button"
+                  onClick={() => onRequestUpgrade('advancedBuilder')}
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#A90706] hover:underline cursor-pointer"
+                >
+                  <Lock className="w-3 h-3" />
+                  Unlock All
+                </button>
+              )}
+            </div>
             <p className="text-xs text-[#737373] mb-4">
               Click or drag any field onto the form canvas.
             </p>
             <div className="grid grid-cols-2 lg:grid-cols-1 gap-1.5">
-              {FIELD_PALETTE.map((item) => (
-                <button
-                  key={item.type}
-                  type="button"
-                  draggable
-                  onDragStart={(e) => e.dataTransfer.setData('application/x-brosdev-new', item.type)}
-                  onClick={() => addField(item.type)}
-                  className="flex items-center justify-between px-3 py-2 text-xs font-medium text-[#111111] bg-[#FAFAFA] hover:bg-[#F5F5F5] border border-[#E5E5E5] rounded-md transition-colors text-left cursor-pointer"
-                >
-                  <span>{item.label}</span>
-                  <Plus className="w-3.5 h-3.5 text-[#737373]" />
-                </button>
-              ))}
+              {FIELD_PALETTE.map((item) => {
+                const isLocked = !canAdvancedBuilder && isAdvancedFieldType(item.type);
+                return (
+                  <button
+                    key={item.type}
+                    type="button"
+                    draggable={!isLocked}
+                    onDragStart={(e) => {
+                      if (isLocked) return;
+                      e.dataTransfer.setData('application/x-brosdev-new', item.type);
+                    }}
+                    onClick={() => addField(item.type)}
+                    title={isLocked ? `${item.label} requires Starter plan or higher` : `Add ${item.label}`}
+                    className={`flex items-center justify-between px-3 py-2 text-xs font-medium border rounded-md transition-colors text-left cursor-pointer ${
+                      isLocked
+                        ? 'text-[#737373] bg-[#F5F5F5] border-[#E5E5E5] opacity-70 hover:border-[#A90706] hover:text-[#A90706]'
+                        : 'text-[#111111] bg-[#FAFAFA] hover:bg-[#F5F5F5] border-[#E5E5E5]'
+                    }`}
+                  >
+                    <span>{item.label}</span>
+                    {isLocked ? (
+                      <Lock className="w-3.5 h-3.5 text-[#A3A3A3]" />
+                    ) : (
+                      <Plus className="w-3.5 h-3.5 text-[#737373]" />
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -537,6 +585,10 @@ export const FormBuilderView: React.FC<{
                         e.stopPropagation();
                         const newType = e.dataTransfer.getData('application/x-brosdev-new') as FieldType;
                         if (newType) {
+                          if (!canAdvancedBuilder && isAdvancedFieldType(newType)) {
+                            onRequestUpgrade('advancedBuilder');
+                            return;
+                          }
                           const created = createDefaultField(newType);
                           const next = [...form.fields];
                           next.splice(index, 0, created);
@@ -796,14 +848,21 @@ export const FormBuilderView: React.FC<{
 
                             {(selectedField.type === 'short_text' ||
                               selectedField.type === 'long_text') && (
-                              <div className="grid grid-cols-2 gap-3">
+                              <div
+                                onClick={() => {
+                                  if (!canAdvancedBuilder) onRequestUpgrade('advancedBuilder');
+                                }}
+                                className={`grid grid-cols-2 gap-3 ${!canAdvancedBuilder ? 'cursor-pointer opacity-60' : ''}`}
+                              >
                                 <div>
-                                  <label className="block text-xs font-semibold text-[#111111] mb-1">
+                                  <label className="flex items-center gap-1 text-xs font-semibold text-[#111111] mb-1">
                                     Min Length
+                                    {!canAdvancedBuilder && <Lock className="w-3 h-3 text-[#A3A3A3]" />}
                                   </label>
                                   <input
                                     type="number"
                                     min={0}
+                                    disabled={!canAdvancedBuilder}
                                     value={selectedField.validation?.minLength ?? ''}
                                     onChange={(e) =>
                                       updateField(selectedField.id, {
@@ -813,16 +872,18 @@ export const FormBuilderView: React.FC<{
                                         },
                                       })
                                     }
-                                    className="w-full px-2.5 py-1.5 text-xs border border-[#D4D4D4] rounded-md"
+                                    className="w-full px-2.5 py-1.5 text-xs border border-[#D4D4D4] rounded-md disabled:cursor-not-allowed disabled:bg-[#F5F5F5]"
                                   />
                                 </div>
                                 <div>
-                                  <label className="block text-xs font-semibold text-[#111111] mb-1">
+                                  <label className="flex items-center gap-1 text-xs font-semibold text-[#111111] mb-1">
                                     Max Length
+                                    {!canAdvancedBuilder && <Lock className="w-3 h-3 text-[#A3A3A3]" />}
                                   </label>
                                   <input
                                     type="number"
                                     min={1}
+                                    disabled={!canAdvancedBuilder}
                                     value={selectedField.validation?.maxLength ?? ''}
                                     onChange={(e) =>
                                       updateField(selectedField.id, {
@@ -832,20 +893,27 @@ export const FormBuilderView: React.FC<{
                                         },
                                       })
                                     }
-                                    className="w-full px-2.5 py-1.5 text-xs border border-[#D4D4D4] rounded-md"
+                                    className="w-full px-2.5 py-1.5 text-xs border border-[#D4D4D4] rounded-md disabled:cursor-not-allowed disabled:bg-[#F5F5F5]"
                                   />
                                 </div>
                               </div>
                             )}
 
                             {selectedField.type === 'number' && (
-                              <div className="grid grid-cols-2 gap-3">
+                              <div
+                                onClick={() => {
+                                  if (!canAdvancedBuilder) onRequestUpgrade('advancedBuilder');
+                                }}
+                                className={`grid grid-cols-2 gap-3 ${!canAdvancedBuilder ? 'cursor-pointer opacity-60' : ''}`}
+                              >
                                 <div>
-                                  <label className="block text-xs font-semibold text-[#111111] mb-1">
+                                  <label className="flex items-center gap-1 text-xs font-semibold text-[#111111] mb-1">
                                     Min Value
+                                    {!canAdvancedBuilder && <Lock className="w-3 h-3 text-[#A3A3A3]" />}
                                   </label>
                                   <input
                                     type="number"
+                                    disabled={!canAdvancedBuilder}
                                     value={selectedField.validation?.min ?? ''}
                                     onChange={(e) =>
                                       updateField(selectedField.id, {
@@ -855,15 +923,17 @@ export const FormBuilderView: React.FC<{
                                         },
                                       })
                                     }
-                                    className="w-full px-2.5 py-1.5 text-xs border border-[#D4D4D4] rounded-md"
+                                    className="w-full px-2.5 py-1.5 text-xs border border-[#D4D4D4] rounded-md disabled:cursor-not-allowed disabled:bg-[#F5F5F5]"
                                   />
                                 </div>
                                 <div>
-                                  <label className="block text-xs font-semibold text-[#111111] mb-1">
+                                  <label className="flex items-center gap-1 text-xs font-semibold text-[#111111] mb-1">
                                     Max Value
+                                    {!canAdvancedBuilder && <Lock className="w-3 h-3 text-[#A3A3A3]" />}
                                   </label>
                                   <input
                                     type="number"
+                                    disabled={!canAdvancedBuilder}
                                     value={selectedField.validation?.max ?? ''}
                                     onChange={(e) =>
                                       updateField(selectedField.id, {
@@ -873,24 +943,31 @@ export const FormBuilderView: React.FC<{
                                         },
                                       })
                                     }
-                                    className="w-full px-2.5 py-1.5 text-xs border border-[#D4D4D4] rounded-md"
+                                    className="w-full px-2.5 py-1.5 text-xs border border-[#D4D4D4] rounded-md disabled:cursor-not-allowed disabled:bg-[#F5F5F5]"
                                   />
                                 </div>
                               </div>
                             )}
 
-                            <div>
-                              <label className="block text-xs font-semibold text-[#111111] mb-1">
+                            <div
+                              onClick={() => {
+                                if (!canAdvancedBuilder) onRequestUpgrade('advancedBuilder');
+                              }}
+                              className={!canAdvancedBuilder ? 'cursor-pointer opacity-60' : ''}
+                            >
+                              <label className="flex items-center gap-1 text-xs font-semibold text-[#111111] mb-1">
                                 Custom Validation Error Message
+                                {!canAdvancedBuilder && <Lock className="w-3 h-3 text-[#A3A3A3]" />}
                               </label>
                               <input
                                 type="text"
+                                disabled={!canAdvancedBuilder}
                                 value={selectedField.errorMessage || ''}
                                 onChange={(e) =>
                                   updateField(selectedField.id, { errorMessage: e.target.value })
                                 }
                                 placeholder="e.g., Please enter a valid company email."
-                                className="w-full px-3 py-2 text-xs border border-[#D4D4D4] rounded-md"
+                                className="w-full px-3 py-2 text-xs border border-[#D4D4D4] rounded-md disabled:cursor-not-allowed disabled:bg-[#F5F5F5]"
                               />
                             </div>
                           </>
@@ -905,8 +982,8 @@ export const FormBuilderView: React.FC<{
                   <div className="flex items-center justify-between pb-3 border-b border-[#E5E5E5]">
                     <div>
                       <div className="text-xs font-bold text-[#111111]">Email Notifications</div>
-                      <div className="text-[11px] text-[#737373]">
-                        Sent via verified platform Resend sender
+                      <div className="text-[11px] text-[#737373] font-mono">
+                        Sender: {verifiedSender}
                       </div>
                     </div>
                     <input
@@ -927,38 +1004,74 @@ export const FormBuilderView: React.FC<{
 
                   {/* Recipients */}
                   <div>
-                    <label className="block text-xs font-semibold text-[#111111] mb-1">
-                      Recipient Email Address(es)
-                    </label>
-                    <div className="flex gap-2 mb-2">
-                      <input
-                        type="email"
-                        value={newRecipient}
-                        onChange={(e) => setNewRecipient(e.target.value)}
-                        placeholder="team@company.com"
-                        className="flex-1 px-2.5 py-1.5 text-xs border border-[#D4D4D4] rounded-md"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const trimmed = newRecipient.trim().toLowerCase();
-                          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return;
-                          if (!form.emailConfig.recipients.includes(trimmed)) {
-                            setForm({
-                              ...form,
-                              emailConfig: {
-                                ...form.emailConfig,
-                                recipients: [...form.emailConfig.recipients, trimmed],
-                              },
-                            });
-                          }
-                          setNewRecipient('');
-                        }}
-                        className="px-3 py-1.5 text-xs font-semibold bg-[#111111] text-white rounded-md cursor-pointer"
-                      >
-                        Add
-                      </button>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-semibold text-[#111111]">
+                        Recipient Email Address(es)
+                      </label>
+                      {!canMultipleRecipients && (
+                        <button
+                          type="button"
+                          onClick={() => onRequestUpgrade('multipleRecipients')}
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#A90706] hover:underline cursor-pointer"
+                        >
+                          <Lock className="w-3 h-3" />
+                          1 max (Pro unlocks 20)
+                        </button>
+                      )}
                     </div>
+                    {(() => {
+                      const recipientLocked =
+                        !canMultipleRecipients && form.emailConfig.recipients.length >= 1;
+                      return (
+                        <div
+                          onClick={() => {
+                            if (recipientLocked) onRequestUpgrade('multipleRecipients');
+                          }}
+                          className={`flex gap-2 mb-2 ${recipientLocked ? 'cursor-pointer opacity-60' : ''}`}
+                        >
+                          <input
+                            type="email"
+                            disabled={recipientLocked}
+                            value={newRecipient}
+                            onChange={(e) => setNewRecipient(e.target.value)}
+                            placeholder={
+                              recipientLocked
+                                ? 'Upgrade to Pro for multiple recipients'
+                                : 'team@company.com'
+                            }
+                            className="flex-1 px-2.5 py-1.5 text-xs border border-[#D4D4D4] rounded-md disabled:cursor-not-allowed disabled:bg-[#F5F5F5]"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (recipientLocked) {
+                                onRequestUpgrade('multipleRecipients');
+                                return;
+                              }
+                              const trimmed = newRecipient.trim().toLowerCase();
+                              if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return;
+                              if (!form.emailConfig.recipients.includes(trimmed)) {
+                                setForm({
+                                  ...form,
+                                  emailConfig: {
+                                    ...form.emailConfig,
+                                    recipients: [...form.emailConfig.recipients, trimmed],
+                                  },
+                                });
+                              }
+                              setNewRecipient('');
+                            }}
+                            className={`inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-md cursor-pointer ${
+                              recipientLocked
+                                ? 'border border-[#D4D4D4] bg-[#F5F5F5] text-[#737373]'
+                                : 'bg-[#111111] text-white'
+                            }`}
+                          >
+                            {recipientLocked ? <Lock className="w-3 h-3" /> : 'Add'}
+                          </button>
+                        </div>
+                      );
+                    })()}
                     <div className="space-y-1">
                       {form.emailConfig.recipients.map((rcpt) => (
                         <div
@@ -986,12 +1099,19 @@ export const FormBuilderView: React.FC<{
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-[#111111] mb-1">
+                  <div
+                    onClick={() => {
+                      if (!canCustomEmail) onRequestUpgrade('customEmailTemplates');
+                    }}
+                    className={!canCustomEmail ? 'cursor-pointer opacity-65' : ''}
+                  >
+                    <label className="flex items-center gap-1 text-xs font-semibold text-[#111111] mb-1">
                       Sender Display Name
+                      {!canCustomEmail && <Lock className="w-3 h-3 text-[#A3A3A3]" />}
                     </label>
                     <input
                       type="text"
+                      disabled={!canCustomEmail}
                       value={form.emailConfig.senderDisplayName}
                       onChange={(e) =>
                         setForm({
@@ -999,7 +1119,7 @@ export const FormBuilderView: React.FC<{
                           emailConfig: { ...form.emailConfig, senderDisplayName: e.target.value },
                         })
                       }
-                      className="w-full px-3 py-2 text-xs border border-[#D4D4D4] rounded-md"
+                      className="w-full px-3 py-2 text-xs border border-[#D4D4D4] rounded-md disabled:cursor-not-allowed disabled:bg-[#F5F5F5]"
                     />
                     <p className="text-[11px] text-[#737373] mt-1 font-mono">
                       From: {form.emailConfig.senderDisplayName || 'BrosDev Forms'} &lt;
@@ -1047,20 +1167,28 @@ export const FormBuilderView: React.FC<{
                     </select>
                   </div>
 
-                  <div>
+                  <div
+                    onClick={() => {
+                      if (!canCustomEmail) onRequestUpgrade('customEmailTemplates');
+                    }}
+                    className={!canCustomEmail ? 'cursor-pointer opacity-65' : ''}
+                  >
                     <div className="flex items-center justify-between mb-1">
-                      <label className="text-xs font-semibold text-[#111111]">
+                      <label className="flex items-center gap-1 text-xs font-semibold text-[#111111]">
                         Notification Template
+                        {!canCustomEmail && <Lock className="w-3 h-3 text-[#A3A3A3]" />}
                       </label>
-                      <button
-                        type="button"
-                        onClick={() => setShowEmailPreview(!showEmailPreview)}
-                        className="text-[11px] font-semibold text-[#A90706] hover:underline cursor-pointer"
-                      >
-                        {showEmailPreview ? 'Edit Template' : 'Preview Email'}
-                      </button>
+                      {canCustomEmail && (
+                        <button
+                          type="button"
+                          onClick={() => setShowEmailPreview(!showEmailPreview)}
+                          className="text-[11px] font-semibold text-[#A90706] hover:underline cursor-pointer"
+                        >
+                          {showEmailPreview ? 'Edit Template' : 'Preview Email'}
+                        </button>
+                      )}
                     </div>
-                    {showEmailPreview ? (
+                    {showEmailPreview && canCustomEmail ? (
                       <div className="p-3 bg-[#F5F5F5] border border-[#E5E5E5] rounded-md text-xs space-y-2">
                         <div className="font-semibold text-[#111111]">
                           Subject: {form.emailConfig.subject.replace('{{form_title}}', form.title)}
@@ -1083,6 +1211,7 @@ export const FormBuilderView: React.FC<{
                     ) : (
                       <textarea
                         rows={4}
+                        disabled={!canCustomEmail}
                         value={form.emailConfig.notificationTemplate}
                         onChange={(e) =>
                           setForm({
@@ -1093,7 +1222,7 @@ export const FormBuilderView: React.FC<{
                             },
                           })
                         }
-                        className="w-full px-3 py-2 text-xs font-mono border border-[#D4D4D4] rounded-md"
+                        className="w-full px-3 py-2 text-xs font-mono border border-[#D4D4D4] rounded-md disabled:cursor-not-allowed disabled:bg-[#F5F5F5]"
                       />
                     )}
                     <p className="text-[11px] text-[#737373] mt-1">
@@ -1102,25 +1231,38 @@ export const FormBuilderView: React.FC<{
                   </div>
 
                   {/* Auto-reply to submitter */}
-                  <div className="pt-3 border-t border-[#E5E5E5] space-y-3">
+                  <div
+                    onClick={() => {
+                      if (!canCustomEmail) onRequestUpgrade('customEmailTemplates');
+                    }}
+                    className={`pt-3 border-t border-[#E5E5E5] space-y-3 ${!canCustomEmail ? 'cursor-pointer opacity-65' : ''}`}
+                  >
                     <label className="flex items-center justify-between text-xs font-bold text-[#111111] cursor-pointer">
-                      <span>Auto-Reply Confirmation to Submitter</span>
+                      <span className="inline-flex items-center gap-1.5">
+                        Auto-Reply Confirmation to Submitter
+                        {!canCustomEmail && <Lock className="w-3 h-3 text-[#A3A3A3]" />}
+                      </span>
                       <input
                         type="checkbox"
+                        disabled={!canCustomEmail}
                         checked={form.emailConfig.confirmationEnabled}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          if (!canCustomEmail) {
+                            onRequestUpgrade('customEmailTemplates');
+                            return;
+                          }
                           setForm({
                             ...form,
                             emailConfig: {
                               ...form.emailConfig,
                               confirmationEnabled: e.target.checked,
                             },
-                          })
-                        }
-                        className="w-4 h-4 accent-[#A90706]"
+                          });
+                        }}
+                        className="w-4 h-4 accent-[#A90706] disabled:cursor-not-allowed"
                       />
                     </label>
-                    {form.emailConfig.confirmationEnabled && (
+                    {form.emailConfig.confirmationEnabled && canCustomEmail && (
                       <>
                         <div>
                           <label className="block text-xs font-semibold text-[#111111] mb-1">
@@ -1222,35 +1364,120 @@ export const FormBuilderView: React.FC<{
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-[#111111] mb-1">
+                  <div
+                    onClick={() => {
+                      if (!canAdvancedBuilder) onRequestUpgrade('advancedBuilder');
+                    }}
+                    className={!canAdvancedBuilder ? 'cursor-pointer opacity-65' : ''}
+                  >
+                    <label className="flex items-center gap-1 text-xs font-semibold text-[#111111] mb-1">
                       Custom Redirect URL (optional, https://)
+                      {!canAdvancedBuilder && <Lock className="w-3 h-3 text-[#A3A3A3]" />}
                     </label>
                     <input
                       type="url"
+                      disabled={!canAdvancedBuilder}
                       value={form.redirectUrl}
                       onChange={(e) => setForm({ ...form, redirectUrl: e.target.value })}
-                      placeholder="https://yoursite.com/thank-you"
-                      className="w-full px-3 py-2 text-xs border border-[#D4D4D4] rounded-md"
+                      placeholder={
+                        canAdvancedBuilder
+                          ? 'https://yoursite.com/thank-you'
+                          : 'Upgrade to Starter to enable redirect URLs'
+                      }
+                      className="w-full px-3 py-2 text-xs border border-[#D4D4D4] rounded-md disabled:cursor-not-allowed disabled:bg-[#F5F5F5]"
                     />
                   </div>
 
+                  {/* White-Label Branding & Webhooks (Professional+) */}
+                  <div className="pt-3 border-t border-[#E5E5E5] space-y-3">
+                    <div className="text-xs font-bold text-[#111111]">Branding &amp; Webhooks</div>
+
+                    <div
+                      onClick={() => {
+                        if (!canRemoveBranding) onRequestUpgrade('removeBranding');
+                      }}
+                      className={!canRemoveBranding ? 'cursor-pointer opacity-65' : ''}
+                    >
+                      <label className="flex items-center justify-between text-xs text-[#333333] cursor-pointer">
+                        <span className="inline-flex items-center gap-1.5">
+                          Remove BrosDev Branding
+                          {!canRemoveBranding && <Lock className="w-3 h-3 text-[#A3A3A3]" />}
+                        </span>
+                        <input
+                          type="checkbox"
+                          disabled={!canRemoveBranding}
+                          checked={Boolean(form.removeBranding)}
+                          onChange={(e) => {
+                            if (!canRemoveBranding) {
+                              onRequestUpgrade('removeBranding');
+                              return;
+                            }
+                            setForm({ ...form, removeBranding: e.target.checked });
+                          }}
+                          className="accent-[#A90706] disabled:cursor-not-allowed"
+                        />
+                      </label>
+                      <p className="text-[11px] text-[#737373] mt-0.5">
+                        Hides BrosDev Forms attribution from emails, thank-you pages, and embeds.
+                      </p>
+                    </div>
+
+                    <div
+                      onClick={() => {
+                        if (!canWebhooks) onRequestUpgrade('webhooks');
+                      }}
+                      className={!canWebhooks ? 'cursor-pointer opacity-65' : ''}
+                    >
+                      <label className="flex items-center gap-1 text-xs font-semibold text-[#111111] mb-1">
+                        Outbound Webhook URL (https://)
+                        {!canWebhooks && <Lock className="w-3 h-3 text-[#A3A3A3]" />}
+                      </label>
+                      <input
+                        type="url"
+                        disabled={!canWebhooks}
+                        value={form.webhookUrl || ''}
+                        onChange={(e) => setForm({ ...form, webhookUrl: e.target.value })}
+                        placeholder={
+                          canWebhooks
+                            ? 'https://api.yoursite.com/webhooks/forms'
+                            : 'Upgrade to Professional to enable webhooks'
+                        }
+                        className="w-full px-3 py-2 text-xs font-mono border border-[#D4D4D4] rounded-md disabled:cursor-not-allowed disabled:bg-[#F5F5F5]"
+                      />
+                    </div>
+                  </div>
+
                   {/* Allowed Domains */}
-                  <div className="pt-3 border-t border-[#E5E5E5]">
-                    <label className="block text-xs font-semibold text-[#111111] mb-1">
+                  <div
+                    onClick={() => {
+                      if (!canAdvancedBuilder) onRequestUpgrade('advancedBuilder');
+                    }}
+                    className={`pt-3 border-t border-[#E5E5E5] ${!canAdvancedBuilder ? 'cursor-pointer opacity-65' : ''}`}
+                  >
+                    <label className="flex items-center gap-1 text-xs font-semibold text-[#111111] mb-1">
                       Allowed Origin Domains (leave empty for any)
+                      {!canAdvancedBuilder && <Lock className="w-3 h-3 text-[#A3A3A3]" />}
                     </label>
                     <div className="flex gap-2 mb-2">
                       <input
                         type="text"
+                        disabled={!canAdvancedBuilder}
                         value={newDomain}
                         onChange={(e) => setNewDomain(e.target.value)}
-                        placeholder="example.com or *.example.com"
-                        className="flex-1 px-2.5 py-1.5 text-xs border border-[#D4D4D4] rounded-md"
+                        placeholder={
+                          canAdvancedBuilder
+                            ? 'example.com or *.example.com'
+                            : 'Upgrade to Starter for domain allowlists'
+                        }
+                        className="flex-1 px-2.5 py-1.5 text-xs border border-[#D4D4D4] rounded-md disabled:cursor-not-allowed disabled:bg-[#F5F5F5]"
                       />
                       <button
                         type="button"
                         onClick={() => {
+                          if (!canAdvancedBuilder) {
+                            onRequestUpgrade('advancedBuilder');
+                            return;
+                          }
                           const d = newDomain.trim().toLowerCase();
                           if (!d) return;
                           if (!form.allowedDomains.includes(d)) {
@@ -1258,9 +1485,13 @@ export const FormBuilderView: React.FC<{
                           }
                           setNewDomain('');
                         }}
-                        className="px-3 py-1.5 text-xs font-semibold bg-[#111111] text-white rounded-md cursor-pointer"
+                        className={`px-3 py-1.5 text-xs font-semibold rounded-md cursor-pointer ${
+                          canAdvancedBuilder
+                            ? 'bg-[#111111] text-white'
+                            : 'border border-[#D4D4D4] bg-[#F5F5F5] text-[#737373]'
+                        }`}
                       >
-                        Add
+                        {canAdvancedBuilder ? 'Add' : <Lock className="w-3 h-3" />}
                       </button>
                     </div>
                     <div className="space-y-1">
@@ -1289,7 +1520,7 @@ export const FormBuilderView: React.FC<{
 
                   {/* Spam Protection */}
                   <div className="pt-3 border-t border-[#E5E5E5] space-y-3">
-                    <div className="text-xs font-bold text-[#111111]">Spam & API Security</div>
+                    <div className="text-xs font-bold text-[#111111]">Spam &amp; API Security</div>
                     <label className="flex items-center justify-between text-xs text-[#333333]">
                       <span>Honeypot Bot Trap</span>
                       <input
@@ -1349,23 +1580,38 @@ export const FormBuilderView: React.FC<{
                         className="w-full px-2.5 py-1.5 text-xs font-mono border border-[#D4D4D4] rounded-md"
                       />
                     </div>
-                    <label className="flex items-center justify-between text-xs text-[#333333]">
-                      <span>Require Secret X-API-Key Header</span>
-                      <input
-                        type="checkbox"
-                        checked={form.spamProtection.requireSecretKey}
-                        onChange={(e) =>
-                          setForm({
-                            ...form,
-                            spamProtection: {
-                              ...form.spamProtection,
-                              requireSecretKey: e.target.checked,
-                            },
-                          })
-                        }
-                        className="accent-[#A90706]"
-                      />
-                    </label>
+                    <div
+                      onClick={() => {
+                        if (!canAdvancedBuilder) onRequestUpgrade('advancedBuilder');
+                      }}
+                      className={!canAdvancedBuilder ? 'cursor-pointer opacity-65' : ''}
+                    >
+                      <label className="flex items-center justify-between text-xs text-[#333333] cursor-pointer">
+                        <span className="inline-flex items-center gap-1.5">
+                          Require Secret X-API-Key Header
+                          {!canAdvancedBuilder && <Lock className="w-3 h-3 text-[#A3A3A3]" />}
+                        </span>
+                        <input
+                          type="checkbox"
+                          disabled={!canAdvancedBuilder}
+                          checked={form.spamProtection.requireSecretKey}
+                          onChange={(e) => {
+                            if (!canAdvancedBuilder) {
+                              onRequestUpgrade('advancedBuilder');
+                              return;
+                            }
+                            setForm({
+                              ...form,
+                              spamProtection: {
+                                ...form.spamProtection,
+                                requireSecretKey: e.target.checked,
+                              },
+                            });
+                          }}
+                          className="accent-[#A90706] disabled:cursor-not-allowed"
+                        />
+                      </label>
+                    </div>
                   </div>
                 </div>
               )}

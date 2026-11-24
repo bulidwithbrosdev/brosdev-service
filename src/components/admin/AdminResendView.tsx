@@ -41,11 +41,16 @@ export const AdminResendView: React.FC = () => {
   const [sendingTest, setSendingTest] = useState(false);
   const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null);
   const [domains, setDomains] = useState<Array<{ name: string; status: string }>>([]);
+  const [serverEnvConfigured, setServerEnvConfigured] = useState<boolean | null>(null);
 
   const load = async () => {
     try {
-      const res = await apiRequest<ResendConfigResponse>('/api/admin/resend');
+      const [res, health] = await Promise.all([
+        apiRequest<ResendConfigResponse>('/api/admin/resend'),
+        fetch('/api/health').then((r) => r.json()).catch(() => ({ resendConfigured: false })),
+      ]);
       setData(res);
+      setServerEnvConfigured(Boolean(health?.resendConfigured));
       if (res.config) {
         setSendingDomain(res.config.sendingDomain);
         setDefaultSenderName(res.config.defaultSenderName);
@@ -203,6 +208,19 @@ export const AdminResendView: React.FC = () => {
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
           )}
           <span>{feedback.text}</span>
+        </div>
+      )}
+
+      {serverEnvConfigured === false && (
+        <div className="p-4 bg-[#FFFBEB] border border-[#FDE68A] rounded-lg text-xs text-[#92400E] flex items-start gap-2.5">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#D97706]" />
+          <div>
+            <strong>External Website Email Routing Requires Server Environment Variable:</strong>{' '}
+            Add <code className="font-mono font-semibold">RESEND_API_KEY</code> in your Vercel
+            Project Settings &rarr; Environment Variables and redeploy so unauthenticated website
+            form submissions (<code className="font-mono">/api/submit/...</code>) can deliver emails
+            automatically without exposing your API key.
+          </div>
         </div>
       )}
 

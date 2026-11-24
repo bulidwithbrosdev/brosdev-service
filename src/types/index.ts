@@ -69,6 +69,8 @@ export interface FormRecord {
   spamProtection: FormSpamConfig;
   secretApiKeyPrefix: string;
   emailConfig: FormEmailConfig;
+  removeBranding?: boolean;
+  webhookUrl?: string;
   createdAt: string;
   updatedAt: string;
   submissionCount?: number;
@@ -178,6 +180,8 @@ export interface WorkspaceMe {
   user: {
     id: number;
     uid: string;
+    accountId: string;
+    senderEmail: string;
     email: string;
     displayName: string;
     photoUrl: string;
@@ -227,3 +231,33 @@ export interface WorkspaceMe {
     totpVerified: boolean;
   } | null;
 }
+
+export type TeamMemberRole = 'admin' | 'editor' | 'viewer';
+export type TeamMemberStatus = 'invited' | 'active' | 'revoked';
+
+export interface TeamMemberRecord {
+  id: number;
+  docId: string;
+  ownerUid: string;
+  ownerEmail: string;
+  ownerAccountId: string;
+  email: string;
+  displayName: string;
+  role: TeamMemberRole;
+  status: TeamMemberStatus;
+  inviteCode: string;
+  invitedByEmail: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TeamWorkspacePayload {
+  allowed: boolean;
+  maxSeats: number;
+  usedSeats: number;
+  accountId: string;
+  senderEmail: string;
+  members: TeamMemberRecord[];
+  incomingInvites: TeamMemberRecord[];
+}
+

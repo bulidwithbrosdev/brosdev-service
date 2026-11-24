@@ -8,9 +8,10 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { Plus, ArrowUpRight, AlertTriangle } from 'lucide-react';
+import { Plus, ArrowUpRight, AlertTriangle, Lock, Copy, Check, BarChart3 } from 'lucide-react';
 import { apiRequest } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
+import { hasPlanFeature, isFormLimitReached, type PlanLockKey } from '../../lib/planLimits';
 
 interface DashboardData {
   stats: {
@@ -43,11 +44,16 @@ export const DashboardView: React.FC<{
   onCreateForm: () => void;
   onOpenSubmissions: (formId?: number) => void;
   onOpenBilling: () => void;
-}> = ({ onCreateForm, onOpenSubmissions, onOpenBilling }) => {
+  onRequestUpgrade: (key: PlanLockKey) => void;
+}> = ({ onCreateForm, onOpenSubmissions, onOpenBilling, onRequestUpgrade }) => {
   const { workspace } = useAuth();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [copiedSender, setCopiedSender] = useState(false);
+
+  const formLimitReached = isFormLimitReached(workspace);
+  const canUseAnalytics = hasPlanFeature(workspace, 'advancedAnalytics');
 
   useEffect(() => {
     let active = true;
@@ -121,6 +127,49 @@ export const DashboardView: React.FC<{
 
   return (
     <div className="space-y-6">
+      {/* Account Identity & Dedicated Sender Bar */}
+      {workspace?.user && (
+        <div className="bg-white border border-[#E5E5E5] rounded-lg px-5 py-3.5 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+            <span className="text-[#737373]">
+              Account ID:{' '}
+              <strong className="font-mono text-[#111111]">{workspace.user.accountId}</strong>
+            </span>
+            <span className="text-[#D4D4D4]">·</span>
+            <span className="text-[#737373]">
+              Dedicated Sender:{' '}
+              <strong className="font-mono text-[#111111]">{workspace.user.senderEmail}</strong>
+            </span>
+            <span className="text-[#D4D4D4]">·</span>
+            <span className="text-[#737373]">
+              Plan:{' '}
+              <strong className="text-[#111111]">{workspace.plan?.name || 'Free'}</strong>
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              navigator.clipboard.writeText(workspace.user.senderEmail);
+              setCopiedSender(true);
+              setTimeout(() => setCopiedSender(false), 2000);
+            }}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold border border-[#E5E5E5] bg-[#FAFAFA] hover:bg-[#F0F0F0] text-[#111111] rounded cursor-pointer"
+          >
+            {copiedSender ? (
+              <>
+                <Check className="w-3 h-3 text-[#16A34A]" />
+                Copied Sender
+              </>
+            ) : (
+              <>
+                <Copy className="w-3 h-3" />
+                Copy Sender Email
+              </>
+            )}
+          </button>
+        </div>
+      )}
+
       {showUpgradeNotice && (
         <div className="bg-white border border-[#FCD34D] rounded-lg px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-start gap-3">
@@ -206,15 +255,28 @@ export const DashboardView: React.FC<{
                 Daily submissions, API requests, and dispatched emails over the last 14 days
               </p>
             </div>
-            <div className="flex items-center gap-4 text-xs text-[#525252] whitespace-nowrap shrink-0">
-              <span className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-sm bg-[#A90706]" />
-                Submissions
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-sm bg-[#111111]" />
-                API Requests
-              </span>
+            <div className="flex items-center gap-3 whitespace-nowrap shrink-0">
+              <div className="hidden sm:flex items-center gap-4 text-xs text-[#525252]">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-[#A90706]" />
+                  Submissions
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-[#111111]" />
+                  API Requests
+                </span>
+              </div>
+              {!canUseAnalytics && (
+                <button
+                  type="button"
+                  onClick={() => onRequestUpgrade('advancedAnalytics')}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold border border-[#D4D4D4] bg-[#F5F5F5] text-[#737373] hover:border-[#A90706] hover:text-[#A90706] rounded cursor-pointer"
+                >
+                  <Lock className="w-3 h-3" />
+                  <BarChart3 className="w-3 h-3" />
+                  Advanced Analytics
+                </button>
+              )}
             </div>
           </div>
 
@@ -333,11 +395,24 @@ export const DashboardView: React.FC<{
               Manage subscription
             </button>
             <button
-              onClick={onCreateForm}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-[#A90706] hover:bg-[#8C0605] rounded-md transition-colors cursor-pointer whitespace-nowrap"
+              onClick={formLimitReached ? () => onRequestUpgrade('formsLimit') : onCreateForm}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                formLimitReached
+                  ? 'border border-[#D4D4D4] bg-[#F5F5F5] text-[#737373] hover:border-[#A90706] hover:text-[#A90706]'
+                  : 'text-white bg-[#A90706] hover:bg-[#8C0605]'
+              }`}
             >
-              <Plus className="w-3.5 h-3.5" />
-              New Form
+              {formLimitReached ? (
+                <>
+                  <Lock className="w-3.5 h-3.5" />
+                  Limit Reached
+                </>
+              ) : (
+                <>
+                  <Plus className="w-3.5 h-3.5" />
+                  New Form
+                </>
+              )}
             </button>
           </div>
         </div>

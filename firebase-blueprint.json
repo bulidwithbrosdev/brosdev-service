@@ -6,6 +6,7 @@
       "type": "object",
       "properties": {
         "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "accountId": { "type": "string", "maxLength": 32, "pattern": "^[a-z0-9_\\-]+$" },
         "numericId": { "type": "number" },
         "email": { "type": "string", "format": "email", "maxLength": 254 },
         "displayName": { "type": "string", "maxLength": 120 },
@@ -66,6 +67,8 @@
         "secretApiKeyPrefix": { "type": "string", "maxLength": 64 },
         "secretApiKeyHash": { "type": "string", "maxLength": 128 },
         "emailConfig": { "type": "object" },
+        "removeBranding": { "type": "boolean" },
+        "webhookUrl": { "type": "string", "maxLength": 500 },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
@@ -73,7 +76,7 @@
     },
     "PublicForm": {
       "title": "PublicForm",
-      "description": "Non-PII public projection of a published form for external form submission verification.",
+      "description": "Non-PII public projection of a published form for external form submission verification and server-sealed email routing.",
       "type": "object",
       "properties": {
         "formKey": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
@@ -81,9 +84,17 @@
         "formDocId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "title": { "type": "string", "maxLength": 160 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "fields": { "type": "array" },
         "status": { "type": "string", "enum": ["draft", "published", "inactive", "suspended"] },
         "successMessage": { "type": "string", "maxLength": 500 },
         "redirectUrl": { "type": "string", "maxLength": 500 },
+        "allowedDomains": { "type": "array" },
+        "spamProtection": { "type": "object" },
+        "secretApiKeyHash": { "type": "string", "maxLength": 128 },
+        "routingToken": { "type": "string", "maxLength": 8000 },
+        "routingKeyId": { "type": "string", "maxLength": 32 },
+        "removeBranding": { "type": "boolean" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
@@ -257,12 +268,31 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "ownerUid", "endpoint", "method", "statusCode", "createdAt"]
+    },
+    "TeamMember": {
+      "title": "TeamMember",
+      "description": "Business plan workspace team collaborator and role assignment.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "accountId": { "type": "string", "maxLength": 32, "pattern": "^[a-z0-9_\\-]+$" },
+        "memberEmail": { "type": "string", "format": "email", "maxLength": 254 },
+        "memberName": { "type": "string", "maxLength": 120 },
+        "role": { "type": "string", "enum": ["admin", "editor", "viewer"] },
+        "status": { "type": "string", "enum": ["invited", "active", "revoked"] },
+        "invitedByEmail": { "type": "string", "maxLength": 254 },
+        "inviteToken": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerUid", "accountId", "memberEmail", "memberName", "role", "status", "invitedByEmail", "inviteToken", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": { "$ref": "#/entities/User" },
-      "description": "Private user profile, subscription state, and custom quota settings."
+      "description": "Private user profile, unique accountId, subscription state, and custom quota settings."
     },
     "/admins/{uid}": {
       "schema": { "$ref": "#/entities/AdminUser" },
@@ -270,7 +300,7 @@
     },
     "/forms/{formId}": {
       "schema": { "$ref": "#/entities/Form" },
-      "description": "Customer form schema, email configuration, and API key metadata."
+      "description": "Customer form schema, email configuration, branding/webhook options, and API key metadata."
     },
     "/publicForms/{formKey}": {
       "schema": { "$ref": "#/entities/PublicForm" },
@@ -307,6 +337,10 @@
     "/apiUsageLogs/{logId}": {
       "schema": { "$ref": "#/entities/ApiUsageLog" },
       "description": "API usage metrics."
+    },
+    "/teamMembers/{memberId}": {
+      "schema": { "$ref": "#/entities/TeamMember" },
+      "description": "Business plan team collaborators scoped by workspace ownerUid."
     }
   }
 }

@@ -7,11 +7,19 @@ import {
   MailCheck,
   MailOpen,
   Paperclip,
+  Lock,
 } from 'lucide-react';
 import { apiDownloadCsv, apiRequest } from '../../lib/api';
 import { FormRecord, SubmissionRecord } from '../../types';
+import { useAuth } from '../../context/AuthContext';
+import { hasPlanFeature, type PlanLockKey } from '../../lib/planLimits';
 
-export const SubmissionsView: React.FC<{ initialFormId?: number }> = ({ initialFormId }) => {
+export const SubmissionsView: React.FC<{
+  initialFormId?: number;
+  onRequestUpgrade: (key: PlanLockKey) => void;
+}> = ({ initialFormId, onRequestUpgrade }) => {
+  const { workspace } = useAuth();
+  const canUseAnalytics = hasPlanFeature(workspace, 'advancedAnalytics');
   const [submissions, setSubmissions] = useState<SubmissionRecord[]>([]);
   const [forms, setForms] = useState<FormRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -99,8 +107,16 @@ export const SubmissionsView: React.FC<{ initialFormId?: number }> = ({ initialF
   };
 
   const handleExportCsv = async () => {
-    const qs = formFilter ? `?formId=${formFilter}` : '';
-    await apiDownloadCsv(`/api/submissions/export${qs}`, 'brosdev-forms-submissions.csv');
+    if (!canUseAnalytics) {
+      onRequestUpgrade('advancedAnalytics');
+      return;
+    }
+    try {
+      const qs = formFilter ? `?formId=${formFilter}` : '';
+      await apiDownloadCsv(`/api/submissions/export${qs}`, 'brosdev-forms-submissions.csv');
+    } catch (err: any) {
+      setFeedback({ ok: false, text: err?.message || 'Unable to export CSV.' });
+    }
   };
 
   const statusTone = (status: string) => {
@@ -151,26 +167,45 @@ export const SubmissionsView: React.FC<{ initialFormId?: number }> = ({ initialF
           <option value="disabled">Notifications Disabled</option>
         </select>
 
-        <input
-          type="date"
-          value={fromDate}
-          onChange={(e) => setFromDate(e.target.value)}
-          className="px-2.5 py-2 text-xs border border-[#D4D4D4] rounded-md"
-          title="From date"
-        />
-        <input
-          type="date"
-          value={toDate}
-          onChange={(e) => setToDate(e.target.value)}
-          className="px-2.5 py-2 text-xs border border-[#D4D4D4] rounded-md"
-          title="To date"
-        />
+        <div
+          onClick={() => {
+            if (!canUseAnalytics) onRequestUpgrade('advancedAnalytics');
+          }}
+          className={`flex items-center gap-2 ${!canUseAnalytics ? 'cursor-pointer opacity-60' : ''}`}
+          title={canUseAnalytics ? 'Filter by date range' : 'Date filtering requires Professional plan'}
+        >
+          <input
+            type="date"
+            value={fromDate}
+            disabled={!canUseAnalytics}
+            onChange={(e) => setFromDate(e.target.value)}
+            className="px-2.5 py-2 text-xs border border-[#D4D4D4] rounded-md disabled:cursor-not-allowed disabled:bg-[#F5F5F5]"
+            title="From date"
+          />
+          <input
+            type="date"
+            value={toDate}
+            disabled={!canUseAnalytics}
+            onChange={(e) => setToDate(e.target.value)}
+            className="px-2.5 py-2 text-xs border border-[#D4D4D4] rounded-md disabled:cursor-not-allowed disabled:bg-[#F5F5F5]"
+            title="To date"
+          />
+        </div>
 
         <button
           onClick={handleExportCsv}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-[#111111] bg-[#F5F5F5] hover:bg-[#E5E5E5] rounded-md whitespace-nowrap cursor-pointer"
+          title={canUseAnalytics ? 'Export submissions to CSV' : 'CSV Export requires Professional plan'}
+          className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-md whitespace-nowrap cursor-pointer ${
+            canUseAnalytics
+              ? 'text-[#111111] bg-[#F5F5F5] hover:bg-[#E5E5E5]'
+              : 'border border-[#D4D4D4] bg-[#F5F5F5] text-[#737373] hover:border-[#A90706] hover:text-[#A90706]'
+          }`}
         >
-          <Download className="w-3.5 h-3.5" />
+          {canUseAnalytics ? (
+            <Download className="w-3.5 h-3.5" />
+          ) : (
+            <Lock className="w-3.5 h-3.5" />
+          )}
           Export CSV
         </button>
       </div>

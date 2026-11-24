@@ -10,17 +10,20 @@ import {
   Check,
   Search,
   Inbox,
+  Lock,
 } from 'lucide-react';
 import { apiRequest } from '../../lib/api';
 import { FormRecord } from '../../types';
 import { useAuth } from '../../context/AuthContext';
+import { isFormLimitReached, type PlanLockKey } from '../../lib/planLimits';
 
 export const FormsListView: React.FC<{
   onEditForm: (formId: number) => void;
   onOpenIntegration: (form: FormRecord, freshlyGeneratedSecret?: string) => void;
   onOpenSubmissions: (formId: number) => void;
-}> = ({ onEditForm, onOpenIntegration, onOpenSubmissions }) => {
-  const { refreshWorkspace } = useAuth();
+  onRequestUpgrade: (key: PlanLockKey) => void;
+}> = ({ onEditForm, onOpenIntegration, onOpenSubmissions, onRequestUpgrade }) => {
+  const { workspace, refreshWorkspace } = useAuth();
   const [forms, setForms] = useState<FormRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -73,7 +76,13 @@ export const FormsListView: React.FC<{
     }
   };
 
+  const limitReached = isFormLimitReached(workspace, forms.length);
+
   const handleDuplicate = async (formId: number) => {
+    if (limitReached) {
+      onRequestUpgrade('formsLimit');
+      return;
+    }
     try {
       setError(null);
       await apiRequest(`/api/forms/${formId}/duplicate`, { method: 'POST' });
@@ -151,13 +160,31 @@ export const FormsListView: React.FC<{
             className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-[#E5E5E5] rounded-lg focus:outline-none focus:border-[#111111]"
           />
         </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-[#A90706] hover:bg-[#8C0605] rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          Create Form
-        </button>
+        <div className="flex items-center gap-3 shrink-0">
+          <span className="text-xs font-mono tabular-nums text-[#737373]">
+            {forms.length} / {workspace?.limits.maxForms ?? 2} forms
+          </span>
+          <button
+            onClick={() => (limitReached ? onRequestUpgrade('formsLimit') : setShowCreateModal(true))}
+            className={`inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+              limitReached
+                ? 'border border-[#D4D4D4] bg-[#F5F5F5] text-[#737373] hover:border-[#A90706] hover:text-[#A90706]'
+                : 'text-white bg-[#A90706] hover:bg-[#8C0605]'
+            }`}
+          >
+            {limitReached ? (
+              <>
+                <Lock className="w-4 h-4" />
+                Form Limit Reached
+              </>
+            ) : (
+              <>
+                <Plus className="w-4 h-4" />
+                Create Form
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -275,10 +302,14 @@ export const FormsListView: React.FC<{
                         </button>
                         <button
                           onClick={() => handleDuplicate(form.id)}
-                          title="Duplicate Form"
-                          className="p-2 text-[#525252] hover:text-[#111111] hover:bg-[#EFEFEF] rounded-md cursor-pointer"
+                          title={limitReached ? 'Form limit reached — click to upgrade' : 'Duplicate Form'}
+                          className={`p-2 rounded-md cursor-pointer ${
+                            limitReached
+                              ? 'text-[#A3A3A3] bg-[#FAFAFA] hover:text-[#A90706]'
+                              : 'text-[#525252] hover:text-[#111111] hover:bg-[#EFEFEF]'
+                          }`}
                         >
-                          <Copy className="w-4 h-4" />
+                          {limitReached ? <Lock className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                         </button>
                         <button
                           onClick={() => handleRotateKey(form)}

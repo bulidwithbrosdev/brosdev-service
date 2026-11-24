@@ -1,15 +1,28 @@
-import React, { useState } from 'react';
-import { ArrowLeft, Check, Copy, KeyRound, Play, Terminal } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Check,
+  CheckCircle2,
+  Copy,
+  KeyRound,
+  Lock,
+  Play,
+  Terminal,
+} from 'lucide-react';
 import { FormRecord } from '../../types';
 import { apiRequest } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
+import { hasPlanFeature, type PlanLockKey } from '../../lib/planLimits';
 
 export const IntegrationView: React.FC<{
   form: FormRecord;
   initialSecretKey?: string;
   onBack: () => void;
-}> = ({ form, initialSecretKey, onBack }) => {
+  onRequestUpgrade: (key: PlanLockKey) => void;
+}> = ({ form, initialSecretKey, onBack, onRequestUpgrade }) => {
   const { workspace } = useAuth();
+  const canUseJs = hasPlanFeature(workspace, 'jsIntegration');
   const [tab, setTab] = useState<'html' | 'javascript' | 'rest' | 'embed'>('html');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [secretKey, setSecretKey] = useState<string>(initialSecretKey || '');
@@ -18,16 +31,58 @@ export const IntegrationView: React.FC<{
   const [testRunning, setTestRunning] = useState(false);
   const [testOutput, setTestOutput] = useState<string | null>(null);
 
-  const liveBase = typeof window !== 'undefined' ? window.location.origin : '';
-  const prodBase = workspace?.publicApiBaseUrl || 'https://api.brosdev.xyz';
+  const [currentStatus, setCurrentStatus] = useState<FormRecord['status']>(form.status);
+  const [publishing, setPublishing] = useState(false);
+  const [serverHealth, setServerHealth] = useState<{
+    checked: boolean;
+    resendConfigured: boolean;
+    routingSynced: boolean;
+  }>({ checked: false, resendConfigured: true, routingSynced: true });
+
+  useEffect(() => {
+    setCurrentStatus(form.status);
+  }, [form.status]);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const [health, syncRes] = await Promise.all([
+          fetch('/api/health')
+            .then((r) => r.json())
+            .catch(() => ({ resendConfigured: false })),
+          apiRequest<{ ok: boolean; routingSynced?: boolean }>(
+            `/api/forms/${form.id}/sync-public`,
+            { method: 'POST' }
+          ).catch(() => ({ ok: false, routingSynced: false })),
+        ]);
+        if (!active) return;
+        setServerHealth({
+          checked: true,
+          resendConfigured: Boolean(health?.resendConfigured),
+          routingSynced: Boolean(syncRes?.routingSynced),
+        });
+      } catch {
+        if (active) {
+          setServerHealth({ checked: true, resendConfigured: false, routingSynced: false });
+        }
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [form.id]);
+
+  const liveBase = typeof window !== 'undefined' ? window.location.origin : 'https://forms.brosdev.info';
+  const prodBase = (workspace?.publicApiBaseUrl || liveBase).replace(/\/$/, '');
   const activeEndpoint =
     endpointMode === 'live'
       ? `${liveBase}/api/submit/${form.formKey}`
-      : `${prodBase.replace(/\/$/, '')}/submit/${form.formKey}`;
+      : `${prodBase}/submit/${form.formKey}`;
   const embedScriptUrl =
     endpointMode === 'live'
       ? `${liveBase}/api/embed/${form.formKey}.js`
-      : `${prodBase.replace(/\/$/, '')}/api/embed/${form.formKey}.js`;
+      : `${prodBase}/api/embed/${form.formKey}.js`;
 
   const inputFields = form.fields.filter(
     (f) => !['submit', 'heading', 'divider'].includes(f.type)
@@ -128,14 +183,27 @@ form.addEventListener('submit', async (event) => {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const handlePublishNow = async () => {
+    setPublishing(true);
+    try {
+      await apiRequest(`/api/forms/${form.id}`, {
+        method: 'PUT',
+        body: { status: 'published' },
+      });
+      setCurrentStatus('published');
+    } finally {
+      setPublishing(false);
+    }
+  };
+
   const handleRotate = async () => {
     setRotating(true);
     try {
-      const res = await apiRequest<{ newSecretApiKey: string }>(
+      const res = await apiRequest<{ newSecretApiKey?: string; secretApiKey?: string }>(
         `/api/forms/${form.id}/rotate-key`,
         { method: 'POST' }
       );
-      setSecretKey(res.newSecretApiKey);
+      setSecretKey(res.newSecretApiKey || res.secretApiKey || '');
     } finally {
       setRotating(false);
     }
@@ -145,17 +213,33 @@ form.addEventListener('submit', async (event) => {
     setTestRunning(true);
     setTestOutput(null);
     try {
-      const data = await apiRequest(`/api/submit/${form.formKey}`, {
+      // Ensure latest schema and sealed email routing token are synced before hitting public HTTP endpoint
+      await apiRequest(`/api/forms/${form.id}/sync-public`, { method: 'POST' }).catch(() => {});
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      };
+      if (secretKey) {
+        headers['X-API-Key'] = secretKey;
+      }
+
+      const resp = await fetch(`${liveBase}/api/submit/${form.formKey}`, {
         method: 'POST',
-        body: sampleJsonObj,
+        headers,
+        body: JSON.stringify(sampleJsonObj),
       });
-      setTestOutput(JSON.stringify({ httpStatus: 200, ...data }, null, 2));
+      const data = await resp.json().catch(() => ({ ok: false, error: `HTTP ${resp.status}` }));
+      setTestOutput(JSON.stringify({ httpStatus: resp.status, ...data }, null, 2));
     } catch (err: any) {
-      setTestOutput(JSON.stringify({ error: err.message }, null, 2));
+      setTestOutput(JSON.stringify({ error: err?.message || 'Request failed' }, null, 2));
     } finally {
       setTestRunning(false);
     }
   };
+
+  const hasRecipients =
+    Array.isArray(form.emailConfig?.recipients) && form.emailConfig.recipients.length > 0;
 
   return (
     <div className="space-y-6">
@@ -170,7 +254,10 @@ form.addEventListener('submit', async (event) => {
           <div>
             <h2 className="text-lg font-bold text-[#111111]">{form.title} — Integration</h2>
             <p className="text-xs text-[#525252]">
-              Ready-to-copy snippets populated with your unique Form ID and endpoint
+              Ready-to-copy snippets populated with your unique Form ID · Outbound sender:{' '}
+              <span className="font-mono font-semibold text-[#111111]">
+                {workspace?.user.senderEmail}
+              </span>
             </p>
           </div>
         </div>
@@ -190,10 +277,62 @@ form.addEventListener('submit', async (event) => {
               endpointMode === 'production' ? 'bg-[#111111] text-white' : 'text-[#525252]'
             }`}
           >
-            api.brosdev.xyz
+            Short /submit URL
           </button>
         </div>
       </div>
+
+      {/* External Submission Readiness Checks */}
+      {currentStatus !== 'published' && (
+        <div className="p-4 bg-[#FFFBEB] border border-[#FDE68A] rounded-lg flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-start gap-2.5 text-xs text-[#92400E]">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-[#D97706]" />
+            <div>
+              <div className="font-bold">This form is currently &ldquo;{currentStatus}&rdquo;</div>
+              <div className="mt-0.5">
+                External websites can only submit to <strong>Published</strong> forms. Publish this
+                form now to accept website submissions and forward them to email.
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={handlePublishNow}
+            disabled={publishing}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-[#A90706] hover:bg-[#8C0605] rounded-md cursor-pointer disabled:opacity-60"
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            {publishing ? 'Publishing...' : 'Publish Form Now'}
+          </button>
+        </div>
+      )}
+
+      {serverHealth.checked && !serverHealth.resendConfigured && (
+        <div className="p-4 bg-[#FEF2F2] border border-[#FECACA] rounded-lg flex items-start gap-2.5 text-xs text-[#A90706]">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div>
+            <div className="font-bold">Server RESEND_API_KEY not detected</div>
+            <div className="mt-0.5">
+              Website form submissions will be saved in your Submissions inbox, but automatic email
+              forwarding from external websites requires{' '}
+              <code className="font-mono font-semibold">RESEND_API_KEY</code> to be added in your
+              Vercel Project Environment Variables (and redeployed).
+            </div>
+          </div>
+        </div>
+      )}
+
+      {form.emailConfig?.notificationsEnabled !== false && !hasRecipients && (
+        <div className="p-4 bg-[#FFFBEB] border border-[#FDE68A] rounded-lg flex items-start gap-2.5 text-xs text-[#92400E]">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-[#D97706]" />
+          <div>
+            <div className="font-bold">No recipient email configured on this form</div>
+            <div className="mt-0.5">
+              Open the Form Builder &rarr; Email Settings tab and add at least one recipient email
+              address so submissions are emailed to you.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Credentials Summary */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -247,21 +386,30 @@ form.addEventListener('submit', async (event) => {
           <div className="flex items-center gap-1">
             {(
               [
-                ['html', 'HTML Form'],
-                ['javascript', 'JavaScript Fetch'],
-                ['rest', 'REST API'],
-                ['embed', 'Embed Code'],
+                ['html', 'HTML Form', false],
+                ['javascript', 'JavaScript Fetch', !canUseJs],
+                ['rest', 'REST API', false],
+                ['embed', 'Embed Code', !canUseJs],
               ] as const
-            ).map(([id, label]) => (
+            ).map(([id, label, isLocked]) => (
               <button
                 key={id}
-                onClick={() => setTab(id)}
-                className={`px-4 py-3 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
-                  tab === id
-                    ? 'border-[#A90706] text-[#111111] bg-white'
-                    : 'border-transparent text-[#525252] hover:text-[#111111]'
+                onClick={() => {
+                  if (isLocked) {
+                    onRequestUpgrade('jsIntegration');
+                    return;
+                  }
+                  setTab(id);
+                }}
+                className={`inline-flex items-center gap-1.5 px-4 py-3 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
+                  isLocked
+                    ? 'border-transparent text-[#A3A3A3] hover:text-[#A90706]'
+                    : tab === id
+                      ? 'border-[#A90706] text-[#111111] bg-white'
+                      : 'border-transparent text-[#525252] hover:text-[#111111]'
                 }`}
               >
+                {isLocked && <Lock className="w-3 h-3" />}
                 {label}
               </button>
             ))}

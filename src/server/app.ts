@@ -6,6 +6,7 @@ import {
   handlePublicSubmit,
   handleResendSend,
   handleResendTestConnection,
+  handleSealRouting,
 } from '../../api/_lib.js';
 
 export function createApiApp() {
@@ -17,6 +18,10 @@ export function createApiApp() {
 
   app.all('/api/health', (req: Request, res: Response) => {
     void handleHealth(req, res);
+  });
+
+  app.all('/api/forms/seal-routing', (req: Request, res: Response) => {
+    void handleSealRouting(req, res);
   });
 
   app.all('/api/resend/test-connection', (req: Request, res: Response) => {

@@ -28,8 +28,16 @@ import type {
   InvoiceTemplateConfig,
   PlanRecord,
   SubmissionRecord,
+  TeamMemberRecord,
+  TeamMemberRole,
+  TeamWorkspacePayload,
   WorkspaceMe,
 } from '../types';
+import {
+  BUSINESS_TEAM_SEATS,
+  formatAccountSenderEmail,
+  isAdvancedFieldType,
+} from './planLimits';
 
 const SUPER_ADMIN_EMAIL = 'gajjars614@gmail.com';
 
@@ -242,10 +250,10 @@ const DEFAULT_SETTINGS: Record<string, Record<string, any>> = {
   invoice_template: { ...DEFAULT_INVOICE_TEMPLATE },
   email_provider_public: {
     provider: 'resend',
-    sendingDomain: 'brosdev.xyz',
+    sendingDomain: 'brosdev.info',
     defaultSenderName: 'BrosDev Forms',
-    defaultSenderEmail: 'forms@brosdev.xyz',
-    defaultReplyTo: 'support@brosdev.xyz',
+    defaultSenderEmail: 'forms@brosdev.info',
+    defaultReplyTo: 'support@brosdev.info',
     defaultEmailFooter: 'Delivered securely via BrosDev Forms.',
     globalNotificationsEnabled: true,
     connectionStatus: 'unconfigured',
@@ -276,6 +284,102 @@ function randomAlphaNum(len: number): string {
   return out;
 }
 
+function generateAccountId(): string {
+  return `acc${randomAlphaNum(6)}`;
+}
+
+function resolveAccountSenderEmail(
+  accountId: string | null | undefined,
+  emailCfg?: Record<string, any> | null
+): string {
+  const sendingDomain = String(emailCfg?.sendingDomain || 'brosdev.info').trim() || 'brosdev.info';
+  return formatAccountSenderEmail(accountId, sendingDomain);
+}
+
+function enforceFormPlanLocks(
+  plan: PlanRecord,
+  candidate: {
+    fields: FormFieldConfig[];
+    redirectUrl: string;
+    allowedDomains: string[];
+    spamProtection: FormSpamConfig;
+    emailConfig: FormEmailConfig;
+    removeBranding: boolean;
+    webhookUrl: string;
+  },
+  existing?: {
+    fields?: FormFieldConfig[];
+    redirectUrl?: string;
+    allowedDomains?: string[];
+    spamProtection?: FormSpamConfig;
+    emailConfig?: FormEmailConfig;
+    removeBranding?: boolean;
+    webhookUrl?: string;
+  }
+) {
+  const features = plan.features;
+  const recipients = Array.isArray(candidate.emailConfig?.recipients)
+    ? candidate.emailConfig.recipients.filter(Boolean)
+    : [];
+  const prevRecipients = Array.isArray(existing?.emailConfig?.recipients)
+    ? existing.emailConfig.recipients.filter(Boolean)
+    : [];
+
+  if (!features.multipleRecipients && recipients.length > 1 && recipients.length > prevRecipients.length) {
+    throw new Error('Multiple email recipients require the Professional plan or higher.');
+  }
+
+  if (
+    !features.customEmailTemplates &&
+    candidate.emailConfig?.confirmationEnabled &&
+    !existing?.emailConfig?.confirmationEnabled
+  ) {
+    throw new Error('Auto-reply confirmation emails require the Starter plan or higher.');
+  }
+
+  if (!features.removeBranding && candidate.removeBranding && !existing?.removeBranding) {
+    throw new Error('Removing BrosDev Forms branding requires the Professional plan or higher.');
+  }
+
+  if (
+    !features.webhooks &&
+    candidate.webhookUrl.trim() !== '' &&
+    candidate.webhookUrl.trim() !== String(existing?.webhookUrl || '').trim()
+  ) {
+    throw new Error('Outbound webhook endpoints require the Professional plan or higher.');
+  }
+
+  if (!features.advancedBuilder) {
+    if (
+      candidate.redirectUrl.trim() !== '' &&
+      candidate.redirectUrl.trim() !== String(existing?.redirectUrl || '').trim()
+    ) {
+      throw new Error('Custom redirect URLs require the Starter plan or higher.');
+    }
+    if (
+      candidate.allowedDomains.length > 0 &&
+      candidate.allowedDomains.length > (existing?.allowedDomains?.length || 0)
+    ) {
+      throw new Error('Domain allowlists require the Starter plan or higher.');
+    }
+    if (
+      candidate.spamProtection?.requireSecretKey &&
+      !existing?.spamProtection?.requireSecretKey
+    ) {
+      throw new Error('Secret X-API-Key enforcement requires the Starter plan or higher.');
+    }
+    const existingFieldIds = new Set((existing?.fields || []).map((f) => f.id));
+    const newlyAddedAdvanced = candidate.fields.find(
+      (f) => isAdvancedFieldType(f.type) && !existingFieldIds.has(f.id)
+    );
+    if (newlyAddedAdvanced) {
+      throw new Error(
+        `Advanced field type "${newlyAddedAdvanced.type}" requires the Starter plan or higher.`
+      );
+    }
+  }
+}
+
 function toIso(ts: unknown): string {
   if (!ts) return new Date().toISOString();
   if (typeof ts === 'string') return ts;
@@ -299,6 +403,21 @@ function isBootstrappedAdminEmail(email?: string | null, verified?: boolean): bo
   return Boolean(email && email.toLowerCase() === SUPER_ADMIN_EMAIL && verified);
 }
 
+async function sha256HexClient(input: string): Promise<string> {
+  try {
+    if (typeof crypto !== 'undefined' && crypto.subtle) {
+      const encoded = new TextEncoder().encode(input);
+      const digest = await crypto.subtle.digest('SHA-256', encoded);
+      return Array.from(new Uint8Array(digest))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+    }
+  } catch {
+    // Fallback if subtle crypto unavailable in non-secure context
+  }
+  return input.slice(-16);
+}
+
 async function serverBackendFetch<T = any>(path: string, body: unknown): Promise<T> {
   const user = auth.currentUser;
   const token = user ? await user.getIdToken() : '';
@@ -316,6 +435,43 @@ async function serverBackendFetch<T = any>(path: string, body: unknown): Promise
     throw new Error(typeof data?.error === 'string' ? data.error : `Backend request failed (${res.status})`);
   }
   return data as T;
+}
+
+async function sealFormRoutingToken(
+  emailConfig: FormEmailConfig,
+  emailProviderCfg: Record<string, any>,
+  options?: { senderEmail?: string; removeBranding?: boolean; webhookUrl?: string }
+): Promise<{ routingToken: string; routingKeyId: string }> {
+  try {
+    const res = await serverBackendFetch<{
+      ok: boolean;
+      routingToken?: string;
+      routingKeyId?: string;
+    }>('/api/forms/seal-routing', {
+      notificationsEnabled: emailConfig?.notificationsEnabled !== false,
+      recipients: Array.isArray(emailConfig?.recipients) ? emailConfig.recipients : [],
+      subject: emailConfig?.subject || '',
+      senderDisplayName:
+        emailConfig?.senderDisplayName || emailProviderCfg?.defaultSenderName || 'BrosDev Forms',
+      replyToField: emailConfig?.replyToField || 'email',
+      confirmationEnabled: Boolean(emailConfig?.confirmationEnabled),
+      autoReplyEmailField: emailConfig?.autoReplyEmailField || 'email',
+      autoReplySubject: emailConfig?.autoReplySubject || 'Thank you for your message',
+      autoReplyBody: emailConfig?.autoReplyBody || '',
+      defaultSenderEmail:
+        options?.senderEmail || emailProviderCfg?.defaultSenderEmail || 'onboarding@resend.dev',
+      defaultEmailFooter:
+        emailProviderCfg?.defaultEmailFooter || 'Delivered securely via BrosDev Forms.',
+      removeBranding: Boolean(options?.removeBranding),
+      webhookUrl: String(options?.webhookUrl || ''),
+    });
+    return {
+      routingToken: String(res?.routingToken || ''),
+      routingKeyId: String(res?.routingKeyId || ''),
+    };
+  } catch {
+    return { routingToken: '', routingKeyId: '' };
+  }
 }
 
 async function getAdminDoc(uid: string) {
@@ -402,17 +558,32 @@ async function ensureUserDoc(user: NonNullable<typeof auth.currentUser>) {
   }
 
   if (snap.exists()) {
-    return snap.data();
+    const existingData = snap.data();
+    if (!existingData.accountId || typeof existingData.accountId !== 'string') {
+      const generatedId = generateAccountId();
+      try {
+        await updateDoc(doc(db, 'users', user.uid), {
+          accountId: generatedId,
+          updatedAt: serverTimestamp(),
+        });
+      } catch {
+        // Fallback silently if rules prevent backfill
+      }
+      return { ...existingData, accountId: generatedId };
+    }
+    return existingData;
   }
 
   const now = new Date();
   const nextMonth = new Date(now);
   nextMonth.setMonth(nextMonth.getMonth() + 1);
   const isPasswordUser = user.providerData.some((p) => p.providerId === 'password');
+  const accountId = generateAccountId();
 
   const newUserDoc = {
     uid: user.uid,
     numericId: nowNumericId(),
+    accountId,
     email: (user.email || '').toLowerCase(),
     displayName: user.displayName || (user.email || 'User').split('@')[0],
     photoUrl: user.photoURL || '',
@@ -513,7 +684,7 @@ async function writeAuditLog(action: string, targetType: string, targetId: strin
   }
 }
 
-function mapFormDoc(d: any): FormRecord & { docId: string; ownerUid: string } {
+function mapFormDoc(d: any): FormRecord & { docId: string; ownerUid: string; secretApiKeyHash: string } {
   const data = d.data();
   return {
     docId: d.id,
@@ -535,6 +706,7 @@ function mapFormDoc(d: any): FormRecord & { docId: string; ownerUid: string } {
       requireSecretKey: false,
     },
     secretApiKeyPrefix: String(data.secretApiKeyPrefix || ''),
+    secretApiKeyHash: String(data.secretApiKeyHash || ''),
     emailConfig: data.emailConfig || {
       notificationsEnabled: true,
       recipients: [],
@@ -547,9 +719,120 @@ function mapFormDoc(d: any): FormRecord & { docId: string; ownerUid: string } {
       autoReplySubject: 'We received your message',
       autoReplyBody: 'Thank you for reaching out!',
     },
+    removeBranding: Boolean(data.removeBranding),
+    webhookUrl: String(data.webhookUrl || ''),
     createdAt: toIso(data.createdAt),
     updatedAt: toIso(data.updatedAt),
   };
+}
+
+async function syncPublicFormDoc(
+  form: {
+    id: number;
+    docId: string;
+    formKey: string;
+    ownerUid: string;
+    title: string;
+    description: string;
+    fields: FormFieldConfig[];
+    status: FormRecord['status'];
+    successMessage: string;
+    redirectUrl: string;
+    allowedDomains: string[];
+    spamProtection: FormSpamConfig;
+    secretApiKeyHash: string;
+    emailConfig: FormEmailConfig;
+    removeBranding?: boolean;
+    webhookUrl?: string;
+  },
+  emailCfg?: Record<string, any>,
+  accountSenderEmail?: string
+): Promise<{ routingSynced: boolean; routingKeyId: string }> {
+  const providerCfg: Record<string, any> =
+    emailCfg || (await getSetting('email_provider_public')) || {};
+  let resolvedSenderEmail = accountSenderEmail;
+  if (!resolvedSenderEmail && auth.currentUser && auth.currentUser.uid === form.ownerUid) {
+    const uDoc = await ensureUserDoc(auth.currentUser).catch(() => null);
+    if (uDoc?.accountId) {
+      resolvedSenderEmail = resolveAccountSenderEmail(uDoc.accountId, providerCfg);
+    }
+  }
+  const sealed = await sealFormRoutingToken(form.emailConfig, providerCfg, {
+    senderEmail: resolvedSenderEmail,
+    removeBranding: Boolean(form.removeBranding),
+    webhookUrl: form.webhookUrl,
+  });
+  const pubRef = doc(db, 'publicForms', form.formKey);
+  const existingSnap = await getDoc(pubRef).catch(() => null);
+
+  const sharedFields = {
+    title: String(form.title || 'Untitled Form').slice(0, 160),
+    description: String(form.description || '').slice(0, 1000),
+    fields: Array.isArray(form.fields) ? form.fields.slice(0, 100) : [],
+    status: form.status,
+    successMessage: String(form.successMessage || 'Thank you! Your submission has been received.').slice(0, 500),
+    redirectUrl: String(form.redirectUrl || '').slice(0, 500),
+    allowedDomains: Array.isArray(form.allowedDomains) ? form.allowedDomains.slice(0, 50) : [],
+    spamProtection: form.spamProtection || {
+      honeypotEnabled: true,
+      honeypotField: '_gotcha',
+      rateLimitPerMin: 20,
+      requireSecretKey: false,
+    },
+    secretApiKeyHash: String(form.secretApiKeyHash || '').slice(0, 128),
+    routingToken: sealed.routingToken,
+    routingKeyId: sealed.routingKeyId,
+    removeBranding: Boolean(form.removeBranding),
+    updatedAt: serverTimestamp(),
+  };
+
+  if (existingSnap && existingSnap.exists()) {
+    await updateDoc(pubRef, sharedFields);
+  } else {
+    await setDoc(pubRef, {
+      formKey: form.formKey,
+      formId: form.id,
+      formDocId: form.docId,
+      ownerUid: form.ownerUid,
+      ...sharedFields,
+      createdAt: serverTimestamp(),
+    });
+  }
+
+  return {
+    routingSynced: Boolean(sealed.routingToken),
+    routingKeyId: sealed.routingKeyId,
+  };
+}
+
+async function autoHealPublicForms(
+  forms: Array<FormRecord & { docId: string; ownerUid: string; secretApiKeyHash: string }>,
+  accountSenderEmail?: string
+): Promise<void> {
+  if (!forms.length) return;
+  try {
+    const [healthResp, emailCfg] = await Promise.all([
+      fetch('/api/health').then((r) => r.json()).catch(() => ({ routingKeyId: '' })),
+      getSetting('email_provider_public'),
+    ]);
+    const currentKeyId = String(healthResp?.routingKeyId || '');
+    for (const f of forms) {
+      const snap = await getDoc(doc(db, 'publicForms', f.formKey)).catch(() => null);
+      const data = snap && snap.exists() ? snap.data() : null;
+      const needsSync =
+        !data ||
+        !Array.isArray(data.fields) ||
+        (currentKeyId && (!data.routingToken || data.routingKeyId !== currentKeyId)) ||
+        data.status !== f.status ||
+        data.title !== f.title ||
+        Boolean(data.removeBranding) !== Boolean(f.removeBranding);
+      if (needsSync) {
+        await syncPublicFormDoc(f, emailCfg, accountSenderEmail).catch(() => {});
+      }
+    }
+  } catch {
+    // Non-blocking auto-heal
+  }
 }
 
 function mapSubmissionDoc(d: any): SubmissionRecord & { docId: string; ownerUid: string } {
@@ -651,6 +934,11 @@ function detectCardBrand(digits: string): string {
 
 export async function exportSubmissionsCsvFromFirestore(queryString: string): Promise<string> {
   const user = requireCurrentUser();
+  const [userDoc, plans] = await Promise.all([ensureUserDoc(user), fetchPlans(false)]);
+  const currentPlan = plans.find((p) => p.id === Number(userDoc.planId)) || DEFAULT_PLANS[0];
+  if (!currentPlan.features.advancedAnalytics) {
+    throw new Error('CSV exports require the Professional plan or higher.');
+  }
   const params = new URLSearchParams(queryString.replace(/^\?/, ''));
   const formIdParam = params.get('formId');
   const qText = (params.get('q') || '').toLowerCase();
@@ -737,10 +1025,16 @@ export async function handleFirestoreApi<T = any>(
             }
           : null;
 
+    const accountId = String(userDoc.accountId || generateAccountId());
+    const sendingDomain = String(emailCfg.sendingDomain || 'brosdev.info');
+    const senderEmail = resolveAccountSenderEmail(accountId, emailCfg);
+
     const me: WorkspaceMe = {
       user: {
         id: Number(userDoc.numericId || 1),
         uid: user.uid,
+        accountId,
+        senderEmail,
         email: String(userDoc.email || user.email || ''),
         displayName: String(userDoc.displayName || user.displayName || ''),
         photoUrl: String(userDoc.photoUrl || user.photoURL || ''),
@@ -777,8 +1071,8 @@ export async function handleFirestoreApi<T = any>(
         maxStorageMb: currentPlan.maxStorageMb,
       },
       platformEmailSender: {
-        sendingDomain: String(emailCfg.sendingDomain || 'brosdev.xyz'),
-        defaultSenderEmail: String(emailCfg.defaultSenderEmail || 'forms@brosdev.xyz'),
+        sendingDomain,
+        defaultSenderEmail: senderEmail,
         defaultSenderName: String(emailCfg.defaultSenderName || 'BrosDev Forms'),
       },
       publicApiBaseUrl: String(
@@ -861,6 +1155,8 @@ export async function handleFirestoreApi<T = any>(
       listUserForms(user.uid),
       listUserSubmissions(user.uid),
     ]);
+    // Auto-heal legacy publicForms projections in the background so external website embeds & emails work immediately
+    void autoHealPublicForms(forms);
     const enriched = forms.map((f) => {
       const fSubs = submissions.filter((s) => s.formId === f.id);
       return {
@@ -873,8 +1169,12 @@ export async function handleFirestoreApi<T = any>(
   }
 
   if (pathname === '/api/forms' && upperMethod === 'POST') {
-    const userDoc = await ensureUserDoc(user);
-    const [forms, plans] = await Promise.all([listUserForms(user.uid), fetchPlans(false)]);
+    const [userDoc, forms, plans, emailCfg] = await Promise.all([
+      ensureUserDoc(user),
+      listUserForms(user.uid),
+      fetchPlans(false),
+      getSetting('email_provider_public'),
+    ]);
     const currentPlan = plans.find((p) => p.id === Number(userDoc.planId)) || DEFAULT_PLANS[0];
     const maxForms = userDoc.customMaxForms ?? currentPlan.maxForms;
     if (forms.length >= maxForms) {
@@ -886,6 +1186,7 @@ export async function handleFirestoreApi<T = any>(
     const formDocId = `form_${id}`;
     const rawSecret = `bdf_live_${randomAlphaNum(28)}`;
     const secretPrefix = `${rawSecret.slice(0, 14)}...`;
+    const secretHash = await sha256HexClient(rawSecret);
     const title = String(body?.title || 'Untitled Form').trim().slice(0, 160) || 'Untitled Form';
     const description = String(body?.description || '').slice(0, 1000);
     const fields: FormFieldConfig[] = Array.isArray(body?.fields) && body.fields.length > 0 ? body.fields : DEFAULT_FIELDS;
@@ -908,6 +1209,22 @@ export async function handleFirestoreApi<T = any>(
       rateLimitPerMin: 20,
       requireSecretKey: false,
     };
+    const removeBranding = Boolean(body?.removeBranding);
+    const webhookUrl = String(body?.webhookUrl || '').trim().slice(0, 500);
+    const redirectUrl = String(body?.redirectUrl || '').slice(0, 500);
+    const allowedDomains = Array.isArray(body?.allowedDomains) ? body.allowedDomains.slice(0, 50) : [];
+
+    enforceFormPlanLocks(currentPlan, {
+      fields,
+      redirectUrl,
+      allowedDomains,
+      spamProtection,
+      emailConfig,
+      removeBranding,
+      webhookUrl,
+    });
+
+    const senderEmail = resolveAccountSenderEmail(userDoc.accountId, emailCfg);
 
     const formPayload = {
       id,
@@ -919,30 +1236,42 @@ export async function handleFirestoreApi<T = any>(
       fields,
       status,
       successMessage: String(body?.successMessage || 'Thank you! Your submission has been received.').slice(0, 500),
-      redirectUrl: String(body?.redirectUrl || '').slice(0, 500),
-      allowedDomains: Array.isArray(body?.allowedDomains) ? body.allowedDomains.slice(0, 50) : [],
+      redirectUrl,
+      allowedDomains,
       spamProtection,
       secretApiKeyPrefix: secretPrefix,
-      secretApiKeyHash: rawSecret.slice(-16),
+      secretApiKeyHash: secretHash,
       emailConfig,
+      removeBranding,
+      webhookUrl,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
 
     try {
       await setDoc(doc(db, 'forms', formDocId), formPayload);
-      await setDoc(doc(db, 'publicForms', formKey), {
-        formKey,
-        formId: id,
-        formDocId,
-        ownerUid: user.uid,
-        title,
-        status,
-        successMessage: formPayload.successMessage,
-        redirectUrl: formPayload.redirectUrl,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      await syncPublicFormDoc(
+        {
+          id,
+          docId: formDocId,
+          formKey,
+          ownerUid: user.uid,
+          title,
+          description,
+          fields,
+          status,
+          successMessage: formPayload.successMessage,
+          redirectUrl: formPayload.redirectUrl,
+          allowedDomains: formPayload.allowedDomains,
+          spamProtection,
+          secretApiKeyHash: secretHash,
+          emailConfig,
+          removeBranding,
+          webhookUrl,
+        },
+        emailCfg,
+        senderEmail
+      );
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, `forms/${formDocId}`);
     }
@@ -957,8 +1286,8 @@ export async function handleFirestoreApi<T = any>(
     } as T;
   }
 
-  // Single form routes: /api/forms/:id, /duplicate, /rotate-key
-  const formMatch = pathname.match(/^\/api\/forms\/(\d+)(?:\/(duplicate|rotate-key))?$/);
+  // Single form routes: /api/forms/:id, /duplicate, /rotate-key, /sync-public
+  const formMatch = pathname.match(/^\/api\/forms\/(\d+)(?:\/(duplicate|rotate-key|sync-public))?$/);
   if (formMatch) {
     const formId = Number(formMatch[1]);
     const action = formMatch[2];
@@ -967,39 +1296,97 @@ export async function handleFirestoreApi<T = any>(
     if (!target) throw new Error('Form not found.');
 
     if (!action && upperMethod === 'GET') {
+      void autoHealPublicForms([target]);
       return { form: target } as T;
+    }
+
+    if (action === 'sync-public' && upperMethod === 'POST') {
+      const [userDoc, emailCfg] = await Promise.all([
+        ensureUserDoc(user),
+        getSetting('email_provider_public'),
+      ]);
+      const senderEmail = resolveAccountSenderEmail(userDoc.accountId, emailCfg);
+      const result = await syncPublicFormDoc(target, emailCfg, senderEmail);
+      return { ok: true, ...result } as T;
     }
 
     if (!action && (upperMethod === 'PUT' || upperMethod === 'PATCH')) {
       if (target.status === 'suspended') {
         throw new Error('This form is suspended by an administrator and cannot be modified.');
       }
+      const [userDoc, plans, emailCfg] = await Promise.all([
+        ensureUserDoc(user),
+        fetchPlans(false),
+        getSetting('email_provider_public'),
+      ]);
+      const currentPlan = plans.find((p) => p.id === Number(userDoc.planId)) || DEFAULT_PLANS[0];
       const nextTitle = body?.title !== undefined ? String(body.title).trim().slice(0, 160) : target.title;
       const nextStatus = body?.status !== undefined ? body.status : target.status;
       const nextSuccess = body?.successMessage !== undefined ? String(body.successMessage).slice(0, 500) : target.successMessage;
       const nextRedirect = body?.redirectUrl !== undefined ? String(body.redirectUrl).slice(0, 500) : target.redirectUrl;
+      const nextAllowedDomains = Array.isArray(body?.allowedDomains) ? body.allowedDomains.slice(0, 50) : target.allowedDomains;
+      const nextFields = Array.isArray(body?.fields) ? body.fields.slice(0, 100) : target.fields;
+      const nextSpam = body?.spamProtection || target.spamProtection;
+      const nextEmailConfig = body?.emailConfig || target.emailConfig;
+      const nextRemoveBranding =
+        body?.removeBranding !== undefined ? Boolean(body.removeBranding) : Boolean(target.removeBranding);
+      const nextWebhookUrl =
+        body?.webhookUrl !== undefined ? String(body.webhookUrl).trim().slice(0, 500) : String(target.webhookUrl || '');
+
+      enforceFormPlanLocks(
+        currentPlan,
+        {
+          fields: nextFields,
+          redirectUrl: nextRedirect,
+          allowedDomains: nextAllowedDomains,
+          spamProtection: nextSpam,
+          emailConfig: nextEmailConfig,
+          removeBranding: nextRemoveBranding,
+          webhookUrl: nextWebhookUrl,
+        },
+        target
+      );
+
+      const senderEmail = resolveAccountSenderEmail(userDoc.accountId, emailCfg);
 
       const patch = {
         title: nextTitle || target.title,
         description: body?.description !== undefined ? String(body.description).slice(0, 1000) : target.description,
-        fields: Array.isArray(body?.fields) ? body.fields.slice(0, 100) : target.fields,
+        fields: nextFields,
         status: nextStatus,
         successMessage: nextSuccess,
         redirectUrl: nextRedirect,
-        allowedDomains: Array.isArray(body?.allowedDomains) ? body.allowedDomains.slice(0, 50) : target.allowedDomains,
-        spamProtection: body?.spamProtection || target.spamProtection,
-        emailConfig: body?.emailConfig || target.emailConfig,
+        allowedDomains: nextAllowedDomains,
+        spamProtection: nextSpam,
+        emailConfig: nextEmailConfig,
+        removeBranding: nextRemoveBranding,
+        webhookUrl: nextWebhookUrl,
         updatedAt: serverTimestamp(),
       };
       try {
         await updateDoc(doc(db, 'forms', target.docId), patch);
-        await updateDoc(doc(db, 'publicForms', target.formKey), {
-          title: patch.title,
-          status: patch.status,
-          successMessage: patch.successMessage,
-          redirectUrl: patch.redirectUrl,
-          updatedAt: serverTimestamp(),
-        });
+        await syncPublicFormDoc(
+          {
+            id: target.id,
+            docId: target.docId,
+            formKey: target.formKey,
+            ownerUid: target.ownerUid,
+            title: patch.title,
+            description: patch.description,
+            fields: patch.fields,
+            status: patch.status,
+            successMessage: patch.successMessage,
+            redirectUrl: patch.redirectUrl,
+            allowedDomains: patch.allowedDomains,
+            spamProtection: patch.spamProtection,
+            secretApiKeyHash: target.secretApiKeyHash,
+            emailConfig: patch.emailConfig,
+            removeBranding: patch.removeBranding,
+            webhookUrl: patch.webhookUrl,
+          },
+          emailCfg,
+          senderEmail
+        );
       } catch (err) {
         handleFirestoreError(err, OperationType.UPDATE, `forms/${target.docId}`);
       }
@@ -1017,22 +1404,33 @@ export async function handleFirestoreApi<T = any>(
         allowedDomains: target.allowedDomains,
         spamProtection: target.spamProtection,
         emailConfig: target.emailConfig,
+        removeBranding: target.removeBranding,
+        webhookUrl: target.webhookUrl,
       });
     }
 
     if (action === 'rotate-key' && upperMethod === 'POST') {
       const rawSecret = `bdf_live_${randomAlphaNum(28)}`;
       const secretApiKeyPrefix = `${rawSecret.slice(0, 14)}...`;
+      const secretApiKeyHash = await sha256HexClient(rawSecret);
       try {
         await updateDoc(doc(db, 'forms', target.docId), {
           secretApiKeyPrefix,
-          secretApiKeyHash: rawSecret.slice(-16),
+          secretApiKeyHash,
           updatedAt: serverTimestamp(),
+        });
+        await syncPublicFormDoc({
+          ...target,
+          secretApiKeyHash,
         });
       } catch (err) {
         handleFirestoreError(err, OperationType.UPDATE, `forms/${target.docId}`);
       }
-      return { secretApiKey: rawSecret, secretApiKeyPrefix } as T;
+      return {
+        secretApiKey: rawSecret,
+        newSecretApiKey: rawSecret,
+        secretApiKeyPrefix,
+      } as T;
     }
 
     if (!action && upperMethod === 'DELETE') {
@@ -1063,9 +1461,16 @@ export async function handleFirestoreApi<T = any>(
     let emailDeliveryStatus: SubmissionRecord['emailDeliveryStatus'] = 'disabled';
 
     if (!isSpam && form.emailConfig?.notificationsEnabled && form.emailConfig.recipients?.length > 0) {
-      const emailCfg = await getSetting('email_provider_public');
+      const [userDoc, emailCfg] = await Promise.all([
+        ensureUserDoc(user),
+        getSetting('email_provider_public'),
+      ]);
+      const accountSenderEmail = resolveAccountSenderEmail(userDoc.accountId, emailCfg);
       const subject = form.emailConfig.subject || `New submission: ${form.title}`;
-      const html = renderSubmissionHtml(form.title, payload, String(emailCfg.defaultEmailFooter || 'Delivered via BrosDev Forms.'));
+      const footerText = form.removeBranding
+        ? ''
+        : String(emailCfg.defaultEmailFooter || 'Delivered via BrosDev Forms.');
+      const html = renderSubmissionHtml(form.title, payload, footerText);
       const replyToVal = form.emailConfig.replyToField ? String(payload[form.emailConfig.replyToField] || '') : '';
 
       let sendResult: { status?: string; resendMessageId?: string; error?: string } = {
@@ -1078,7 +1483,7 @@ export async function handleFirestoreApi<T = any>(
           subject,
           html,
           fromName: form.emailConfig.senderDisplayName || emailCfg.defaultSenderName || 'BrosDev Forms',
-          fromEmail: emailCfg.defaultSenderEmail || 'forms@brosdev.xyz',
+          fromEmail: accountSenderEmail,
           replyTo: replyToVal || undefined,
         });
       } catch (e: any) {
@@ -1097,7 +1502,7 @@ export async function handleFirestoreApi<T = any>(
             formId: form.id,
             submissionId: subId,
             recipient: String(recipient).slice(0, 254),
-            sender: String(emailCfg.defaultSenderEmail || 'forms@brosdev.xyz'),
+            sender: accountSenderEmail,
             subject: subject.slice(0, 300),
             status: accepted ? 'delivered' : 'failed',
             resendMessageId: String(sendResult.resendMessageId || ''),
@@ -1196,18 +1601,23 @@ export async function handleFirestoreApi<T = any>(
     }
 
     if (action === 'retry-email' && upperMethod === 'POST') {
-      const forms = await listUserForms(user.uid);
+      const [userDoc, forms, emailCfg] = await Promise.all([
+        ensureUserDoc(user),
+        listUserForms(user.uid),
+        getSetting('email_provider_public'),
+      ]);
       const form = forms.find((f) => f.id === target.formId);
       const recipients = form?.emailConfig?.recipients || (user.email ? [user.email] : []);
-      const emailCfg = await getSetting('email_provider_public');
+      const accountSenderEmail = resolveAccountSenderEmail(userDoc.accountId, emailCfg);
+      const footerText = form?.removeBranding ? '' : String(emailCfg.defaultEmailFooter || '');
       const sendRes = await serverBackendFetch<{ status?: string; resendMessageId?: string; error?: string }>(
         '/api/resend/send',
         {
           to: recipients,
           subject: form?.emailConfig?.subject || `Retry: ${target.formTitle}`,
-          html: renderSubmissionHtml(target.formTitle, target.payload, String(emailCfg.defaultEmailFooter || '')),
+          html: renderSubmissionHtml(target.formTitle, target.payload, footerText),
           fromName: form?.emailConfig?.senderDisplayName || 'BrosDev Forms',
-          fromEmail: emailCfg.defaultSenderEmail || 'forms@brosdev.xyz',
+          fromEmail: accountSenderEmail,
         }
       );
       const nextStatus =
@@ -1493,6 +1903,243 @@ export async function handleFirestoreApi<T = any>(
       invoiceNumber: amountCents > 0 ? invoiceNumber : undefined,
       message: `Subscription updated to ${targetPlan.name} (${billingCycle}).`,
     } as T;
+  }
+
+  // ---------------- BUSINESS PLAN TEAM COLLABORATION (/api/team) ----------------
+  const mapTeamMemberDoc = (d: any): TeamMemberRecord => {
+    const v = d.data();
+    return {
+      id: Number(v.id),
+      docId: d.id,
+      ownerUid: String(v.ownerUid || ''),
+      ownerEmail: String(v.invitedByEmail || ''),
+      ownerAccountId: String(v.accountId || ''),
+      email: String(v.memberEmail || ''),
+      displayName: String(v.memberName || ''),
+      role: (v.role === 'admin' || v.role === 'editor' ? v.role : 'viewer') as TeamMemberRole,
+      status: (v.status === 'active' || v.status === 'revoked' ? v.status : 'invited') as TeamMemberRecord['status'],
+      inviteCode: String(v.inviteToken || ''),
+      invitedByEmail: String(v.invitedByEmail || ''),
+      createdAt: toIso(v.createdAt),
+      updatedAt: toIso(v.updatedAt),
+    };
+  };
+
+  if (pathname === '/api/team' && upperMethod === 'GET') {
+    const [userDoc, plans, emailCfg] = await Promise.all([
+      ensureUserDoc(user),
+      fetchPlans(false),
+      getSetting('email_provider_public'),
+    ]);
+    const currentPlan = plans.find((p) => p.id === Number(userDoc.planId)) || DEFAULT_PLANS[0];
+    const allowed = Boolean(currentPlan.features.teamMembers);
+    const accountId = String(userDoc.accountId || generateAccountId());
+    const senderEmail = resolveAccountSenderEmail(accountId, emailCfg);
+
+    let members: TeamMemberRecord[] = [];
+    let incomingInvites: TeamMemberRecord[] = [];
+
+    try {
+      const ownSnap = await getDocs(
+        query(collection(db, 'teamMembers'), where('ownerUid', '==', user.uid))
+      );
+      members = ownSnap.docs
+        .map(mapTeamMemberDoc)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    } catch {
+      members = [];
+    }
+
+    if (user.email && user.emailVerified) {
+      try {
+        const incSnap = await getDocs(
+          query(collection(db, 'teamMembers'), where('memberEmail', '==', user.email.toLowerCase()))
+        );
+        incomingInvites = incSnap.docs
+          .map(mapTeamMemberDoc)
+          .filter((m) => m.ownerUid !== user.uid && m.status !== 'revoked')
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      } catch {
+        incomingInvites = [];
+      }
+    }
+
+    const usedSeats = members.filter((m) => m.status !== 'revoked').length;
+    const payload: TeamWorkspacePayload = {
+      allowed,
+      maxSeats: allowed ? BUSINESS_TEAM_SEATS : 1,
+      usedSeats,
+      accountId,
+      senderEmail,
+      members,
+      incomingInvites,
+    };
+    return payload as T;
+  }
+
+  if (pathname === '/api/team/invite' && upperMethod === 'POST') {
+    const [userDoc, plans, emailCfg] = await Promise.all([
+      ensureUserDoc(user),
+      fetchPlans(false),
+      getSetting('email_provider_public'),
+    ]);
+    const currentPlan = plans.find((p) => p.id === Number(userDoc.planId)) || DEFAULT_PLANS[0];
+    if (!currentPlan.features.teamMembers) {
+      throw new Error('Team collaboration is locked on your current plan. Upgrade to Business to invite teammates.');
+    }
+
+    const memberEmail = String(body?.email || '').trim().toLowerCase();
+    const memberName = String(body?.displayName || body?.name || '').trim().slice(0, 120);
+    const role: TeamMemberRole =
+      body?.role === 'admin' || body?.role === 'editor' ? body.role : 'viewer';
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(memberEmail)) {
+      throw new Error('Enter a valid teammate email address.');
+    }
+    if (user.email && memberEmail === user.email.toLowerCase()) {
+      throw new Error('You are already the workspace owner.');
+    }
+
+    const existingSnap = await getDocs(
+      query(collection(db, 'teamMembers'), where('ownerUid', '==', user.uid))
+    );
+    const existingMembers = existingSnap.docs.map(mapTeamMemberDoc);
+    const activeCount = existingMembers.filter((m) => m.status !== 'revoked').length;
+    if (activeCount >= BUSINESS_TEAM_SEATS) {
+      throw new Error(`Business plan seat limit reached (${BUSINESS_TEAM_SEATS} team seats maximum).`);
+    }
+    if (existingMembers.some((m) => m.email.toLowerCase() === memberEmail && m.status !== 'revoked')) {
+      throw new Error(`${memberEmail} is already invited or active on your team.`);
+    }
+
+    const id = nowNumericId();
+    const docId = `tm_${id}`;
+    const accountId = String(userDoc.accountId || generateAccountId());
+    const senderEmail = resolveAccountSenderEmail(accountId, emailCfg);
+    const inviteToken = `inv_${randomAlphaNum(20)}`;
+    const invitedByEmail = String(userDoc.email || user.email || '').toLowerCase();
+    const safeName = memberName || memberEmail.split('@')[0];
+
+    const recordPayload = {
+      id,
+      ownerUid: user.uid,
+      accountId,
+      memberEmail,
+      memberName: safeName,
+      role,
+      status: 'invited',
+      invitedByEmail,
+      inviteToken,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+
+    try {
+      await setDoc(doc(db, 'teamMembers', docId), recordPayload);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, `teamMembers/${docId}`);
+    }
+
+    // Attempt email delivery via Resend using the workspace's dedicated {accountId}-forms@{domain} sender
+    let emailSent = false;
+    try {
+      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://forms.brosdev.info';
+      const inviteHtml = `<div style="font-family:Inter,system-ui,sans-serif;max-width:560px;margin:0 auto;border:1px solid #E5E5E5;border-radius:8px;overflow:hidden;background:#FFFFFF;">
+        <div style="background:#111111;padding:20px 24px;color:#FFFFFF;">
+          <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#A3A3A3;">Workspace Invitation</div>
+          <div style="font-size:18px;font-weight:700;margin-top:4px;">You were invited to join ${String(userDoc.displayName || invitedByEmail)}'s BrosDev Forms Team</div>
+        </div>
+        <div style="padding:24px;font-size:14px;line-height:1.6;color:#262626;">
+          <p style="margin:0 0 12px;">Hi ${safeName},</p>
+          <p style="margin:0 0 12px;"><strong>${invitedByEmail}</strong> invited you to collaborate on workspace <strong>${accountId}</strong> with the <strong>${role.toUpperCase()}</strong> role.</p>
+          <p style="margin:0 0 18px;">Sign in at <a href="${origin}" style="color:#A90706;font-weight:600;">${origin}</a> with <strong>${memberEmail}</strong> and open the <strong>Team</strong> tab to accept your invitation.</p>
+          <div style="padding:10px 14px;background:#FAFAFA;border:1px solid #E5E5E5;border-radius:6px;font-family:monospace;font-size:12px;color:#111111;">Invite Code: ${inviteToken}</div>
+        </div>
+      </div>`;
+      const res = await serverBackendFetch<{ status?: string }>('/api/resend/send', {
+        to: [memberEmail],
+        subject: `Invitation to join ${String(userDoc.displayName || 'BrosDev Forms')} workspace (${accountId})`,
+        html: inviteHtml,
+        fromName: `${String(userDoc.displayName || 'BrosDev Forms')} Team`,
+        fromEmail: senderEmail,
+        replyTo: invitedByEmail,
+      });
+      emailSent = res.status === 'accepted' || res.status === 'sent';
+    } catch {
+      emailSent = false;
+    }
+
+    return {
+      member: {
+        id,
+        docId,
+        ownerUid: user.uid,
+        ownerEmail: invitedByEmail,
+        ownerAccountId: accountId,
+        email: memberEmail,
+        displayName: safeName,
+        role,
+        status: 'invited',
+        inviteCode: inviteToken,
+        invitedByEmail,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as TeamMemberRecord,
+      emailSent,
+    } as T;
+  }
+
+  const teamActionMatch = pathname.match(/^\/api\/team\/(\d+)(?:\/(accept))?$/);
+  if (teamActionMatch) {
+    const memberIdNum = Number(teamActionMatch[1]);
+    const action = teamActionMatch[2];
+    const docId = `tm_${memberIdNum}`;
+
+    if (action === 'accept' && upperMethod === 'POST') {
+      try {
+        await updateDoc(doc(db, 'teamMembers', docId), {
+          status: 'active',
+          updatedAt: serverTimestamp(),
+        });
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, `teamMembers/${docId}`);
+      }
+      return { ok: true, status: 'active' } as T;
+    }
+
+    const [userDoc, plans] = await Promise.all([ensureUserDoc(user), fetchPlans(false)]);
+    const currentPlan = plans.find((p) => p.id === Number(userDoc.planId)) || DEFAULT_PLANS[0];
+    if (!currentPlan.features.teamMembers) {
+      throw new Error('Team management requires the Business plan.');
+    }
+
+    if (!action && upperMethod === 'PATCH') {
+      const updatePatch: Record<string, any> = { updatedAt: serverTimestamp() };
+      if (body?.role && ['admin', 'editor', 'viewer'].includes(body.role)) {
+        updatePatch.role = body.role;
+      }
+      if (body?.status && ['invited', 'active', 'revoked'].includes(body.status)) {
+        updatePatch.status = body.status;
+      }
+      if (typeof body?.displayName === 'string' && body.displayName.trim()) {
+        updatePatch.memberName = body.displayName.trim().slice(0, 120);
+      }
+      try {
+        await updateDoc(doc(db, 'teamMembers', docId), updatePatch);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, `teamMembers/${docId}`);
+      }
+      return { ok: true } as T;
+    }
+
+    if (!action && upperMethod === 'DELETE') {
+      try {
+        await deleteDoc(doc(db, 'teamMembers', docId));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, `teamMembers/${docId}`);
+      }
+      return { deleted: true } as T;
+    }
   }
 
   // ==================== SUPER ADMIN ROUTES ====================

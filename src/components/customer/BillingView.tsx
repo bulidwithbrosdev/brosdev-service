@@ -98,7 +98,7 @@ function detectBrandLabel(input: string): string {
   return 'CARD';
 }
 
-export const BillingView: React.FC = () => {
+export const BillingView: React.FC<{ highlightPlanSlug?: string }> = ({ highlightPlanSlug }) => {
   const { workspace, refreshWorkspace } = useAuth();
   const [data, setData] = useState<BillingPayload | null>(null);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
@@ -383,6 +383,7 @@ export const BillingView: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         {data.plans.map((plan) => {
           const isCurrent = data.currentPlan?.id === plan.id;
+          const isHighlighted = Boolean(highlightPlanSlug && plan.slug === highlightPlanSlug && !isCurrent);
           const price =
             billingCycle === 'yearly'
               ? Math.round(plan.yearlyPriceCents / 100)
@@ -390,12 +391,23 @@ export const BillingView: React.FC = () => {
           return (
             <div
               key={plan.id}
-              className={`bg-white border rounded-lg p-6 flex flex-col justify-between ${
-                isCurrent ? 'border-[#A90706]' : 'border-[#E5E5E5]'
+              className={`bg-white border rounded-lg p-6 flex flex-col justify-between transition-shadow ${
+                isCurrent
+                  ? 'border-[#A90706]'
+                  : isHighlighted
+                    ? 'border-[#111111] ring-2 ring-[#111111]/15'
+                    : 'border-[#E5E5E5]'
               }`}
             >
               <div>
-                <div className="text-xs text-[#737373]">{plan.audienceLabel || 'SaaS Tier'}</div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-xs text-[#737373]">{plan.audienceLabel || 'SaaS Tier'}</div>
+                  {isHighlighted && (
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#A90706]">
+                      Recommended
+                    </span>
+                  )}
+                </div>
                 <h3 className="text-lg font-bold text-[#111111] mt-1">{plan.name}</h3>
                 <div className="mt-4 flex items-baseline gap-1">
                   <span className="text-3xl font-bold font-mono tabular-nums text-[#111111]">
@@ -423,24 +435,56 @@ export const BillingView: React.FC = () => {
                       {plan.maxEmailsPerMonth.toLocaleString()} Resend emails/mo
                     </span>
                   </li>
-                  {plan.features.multipleRecipients && (
-                    <li className="flex items-center gap-2">
+                  <li className="flex items-center gap-2">
+                    {plan.features.advancedBuilder ? (
                       <Check className="w-3.5 h-3.5 text-[#16A34A] shrink-0" />
-                      <span>Multiple email recipients</span>
-                    </li>
-                  )}
-                  {plan.features.removeBranding && (
-                    <li className="flex items-center gap-2">
+                    ) : (
+                      <Lock className="w-3.5 h-3.5 text-[#A3A3A3] shrink-0" />
+                    )}
+                    <span className={plan.features.advancedBuilder ? '' : 'text-[#737373]'}>
+                      Advanced Builder, JS Fetch &amp; Embed
+                    </span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    {plan.features.customEmailTemplates ? (
                       <Check className="w-3.5 h-3.5 text-[#16A34A] shrink-0" />
-                      <span>Remove BrosDev branding</span>
-                    </li>
-                  )}
-                  {plan.features.webhooks && (
-                    <li className="flex items-center gap-2">
+                    ) : (
+                      <Lock className="w-3.5 h-3.5 text-[#A3A3A3] shrink-0" />
+                    )}
+                    <span className={plan.features.customEmailTemplates ? '' : 'text-[#737373]'}>
+                      Custom Sender Name &amp; Auto-Reply
+                    </span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    {plan.features.multipleRecipients ? (
                       <Check className="w-3.5 h-3.5 text-[#16A34A] shrink-0" />
-                      <span>Webhooks &amp; priority API</span>
-                    </li>
-                  )}
+                    ) : (
+                      <Lock className="w-3.5 h-3.5 text-[#A3A3A3] shrink-0" />
+                    )}
+                    <span className={plan.features.multipleRecipients ? '' : 'text-[#737373]'}>
+                      Multiple recipients &amp; CSV Export
+                    </span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    {plan.features.removeBranding ? (
+                      <Check className="w-3.5 h-3.5 text-[#16A34A] shrink-0" />
+                    ) : (
+                      <Lock className="w-3.5 h-3.5 text-[#A3A3A3] shrink-0" />
+                    )}
+                    <span className={plan.features.removeBranding ? '' : 'text-[#737373]'}>
+                      White-label &amp; Outbound Webhooks
+                    </span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    {plan.features.teamMembers ? (
+                      <Check className="w-3.5 h-3.5 text-[#16A34A] shrink-0" />
+                    ) : (
+                      <Lock className="w-3.5 h-3.5 text-[#A3A3A3] shrink-0" />
+                    )}
+                    <span className={plan.features.teamMembers ? 'font-semibold text-[#111111]' : 'text-[#737373]'}>
+                      Team Collaboration (up to 15 seats)
+                    </span>
+                  </li>
                 </ul>
               </div>
 

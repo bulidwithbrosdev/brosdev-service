@@ -9,6 +9,9 @@ import {
   CreditCard,
   LogOut,
   Save,
+  Copy,
+  Check,
+  Mail,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { apiRequest } from '../../lib/api';
@@ -43,6 +46,13 @@ export const AccountSettingsView: React.FC<{ onOpenBilling: () => void }> = ({ o
   const [showPasswords, setShowPasswords] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
   const [passwordNotice, setPasswordNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  const [copiedField, setCopiedField] = useState<'accountId' | 'senderEmail' | null>(null);
+
+  const handleCopyIdentity = (field: 'accountId' | 'senderEmail', value: string) => {
+    navigator.clipboard.writeText(value);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
 
   useEffect(() => {
     if (user) {
@@ -158,6 +168,85 @@ export const AccountSettingsView: React.FC<{ onOpenBilling: () => void }> = ({ o
         </div>
       </div>
 
+      {/* Account ID & Dedicated Sender Email */}
+      <div className="bg-white border border-[#E5E5E5] rounded-lg p-6">
+        <div className="flex items-start justify-between gap-4 pb-4 border-b border-[#EFEFEF]">
+          <div className="flex items-center gap-2">
+            <Mail className="w-4 h-4 text-[#A90706]" />
+            <div>
+              <h2 className="text-sm font-bold text-[#111111]">
+                Account ID &amp; Dedicated Sender Email
+              </h2>
+              <p className="text-xs text-[#525252]">
+                Every account receives a unique identifier and dedicated outbound Resend address for
+                form notifications, auto-replies, and team invitations.
+              </p>
+            </div>
+          </div>
+          <span className="text-xs font-semibold text-[#111111] whitespace-nowrap">
+            Domain: <span className="font-mono">{workspace.platformEmailSender.sendingDomain}</span>
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
+          <div className="p-4 bg-[#FAFAFA] border border-[#E5E5E5] rounded-md flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-[#737373]">
+                Unique Account ID
+              </div>
+              <div className="mt-1 font-mono text-sm font-bold text-[#111111] truncate">
+                {user.accountId}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleCopyIdentity('accountId', user.accountId)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-[#D4D4D4] bg-white hover:bg-[#F5F5F5] text-[#111111] rounded cursor-pointer shrink-0"
+            >
+              {copiedField === 'accountId' ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-[#16A34A]" />
+                  Copied
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5" />
+                  Copy ID
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="p-4 bg-[#FAFAFA] border border-[#E5E5E5] rounded-md flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-[#737373]">
+                Dedicated Form Sender Email
+              </div>
+              <div className="mt-1 font-mono text-sm font-bold text-[#111111] truncate">
+                {user.senderEmail}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleCopyIdentity('senderEmail', user.senderEmail)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-[#D4D4D4] bg-white hover:bg-[#F5F5F5] text-[#111111] rounded cursor-pointer shrink-0"
+            >
+              {copiedField === 'senderEmail' ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-[#16A34A]" />
+                  Copied
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5" />
+                  Copy Email
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Profile Details */}
         <form
@@ -220,7 +309,7 @@ export const AccountSettingsView: React.FC<{ onOpenBilling: () => void }> = ({ o
               <div className="p-3 bg-[#FAFAFA] border border-[#EFEFEF] rounded-lg">
                 <div className="text-[11px] text-[#737373]">Account ID</div>
                 <div className="text-xs font-mono font-semibold text-[#111111] mt-0.5">
-                  USR-{String(user.id).padStart(5, '0')}
+                  {user.accountId}
                 </div>
               </div>
               <div className="p-3 bg-[#FAFAFA] border border-[#EFEFEF] rounded-lg">
