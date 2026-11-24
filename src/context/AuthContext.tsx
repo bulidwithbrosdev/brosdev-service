@@ -1,7 +1,14 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, signInWithPopup, signOut, User } from 'firebase/auth';
 import { auth, googleAuthProvider } from '../lib/firebase';
-import { apiRequest, getInMemoryAuthToken, setInMemoryAuthToken } from '../lib/api';
+import {
+  apiRequest,
+  buildApiUrl,
+  extractErrorMessage,
+  getInMemoryAuthToken,
+  parseApiResponse,
+  setInMemoryAuthToken,
+} from '../lib/api';
 import { WorkspaceMe } from '../types';
 
 interface AuthContextValue {
@@ -32,8 +39,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setError(null);
       const data = await apiRequest<WorkspaceMe>('/api/me');
       setWorkspace(data);
-    } catch (err: any) {
-      setError(err.message || 'Unable to load workspace profile');
+    } catch (err: unknown) {
+      setError(extractErrorMessage(err, 'Unable to load workspace profile.'));
       setWorkspace(null);
     }
   }, []);
@@ -60,9 +67,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setHasLocalSession(false);
       await signInWithPopup(auth, googleAuthProvider);
     } catch (err: any) {
-      if (err?.code !== 'auth/popup-closed-by-user') {
-        setError(err?.message || 'Sign-in failed. Please try again.');
+      if (err?.code === 'auth/popup-closed-by-user') {
+        return;
       }
+      if (err?.code === 'auth/unauthorized-domain') {
+        const currentHost =
+          typeof window !== 'undefined' ? window.location.hostname : 'this domain';
+        const projectId = auth.app.options.projectId || 'your Firebase project';
+        setError(
+          `Google Sign-In is not authorized for "${currentHost}" yet. Add "${currentHost}" under Firebase Console → Authentication → Settings → Authorized domains (project: ${projectId}), or sign in with Email & Password above.`
+        );
+        return;
+      }
+      if (err?.code === 'auth/popup-blocked') {
+        setError(
+          'Your browser blocked the Google Sign-In popup. Please allow popups for this site or sign in with Email & Password.'
+        );
+        return;
+      }
+      setError(extractErrorMessage(err, 'Google Sign-In failed. Please try again.'));
     }
   }, []);
 
@@ -70,21 +93,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     async (email: string, password: string) => {
       setError(null);
       try {
-        const res = await fetch('/api/auth/login', {
+        const res = await fetch(buildApiUrl('/api/auth/login'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
           body: JSON.stringify({ email, password }),
         });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || !data.token) {
-          throw new Error(data.error || 'Invalid email or password.');
+        const data = await parseApiResponse<{ token?: string }>(
+          res,
+          'Invalid email or password.'
+        );
+        if (!data?.token) {
+          throw new Error('Authentication server did not return a session token.');
         }
         setInMemoryAuthToken(data.token);
         setHasLocalSession(true);
         await fetchWorkspace();
-      } catch (err: any) {
-        setError(err?.message || 'Sign-in failed.');
-        throw err;
+      } catch (err: unknown) {
+        const message = extractErrorMessage(err, 'Sign-in failed. Please try again.');
+        setError(message);
+        throw new Error(message);
       }
     },
     [fetchWorkspace]
@@ -94,21 +121,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     async (email: string, password: string, displayName: string) => {
       setError(null);
       try {
-        const res = await fetch('/api/auth/register', {
+        const res = await fetch(buildApiUrl('/api/auth/register'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
           body: JSON.stringify({ email, password, displayName }),
         });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || !data.token) {
-          throw new Error(data.error || 'Account creation failed.');
+        const data = await parseApiResponse<{ token?: string }>(
+          res,
+          'Account creation failed.'
+        );
+        if (!data?.token) {
+          throw new Error('Authentication server did not return a session token.');
         }
         setInMemoryAuthToken(data.token);
         setHasLocalSession(true);
         await fetchWorkspace();
-      } catch (err: any) {
-        setError(err?.message || 'Account creation failed.');
-        throw err;
+      } catch (err: unknown) {
+        const message = extractErrorMessage(err, 'Account creation failed. Please try again.');
+        setError(message);
+        throw new Error(message);
       }
     },
     [fetchWorkspace]
