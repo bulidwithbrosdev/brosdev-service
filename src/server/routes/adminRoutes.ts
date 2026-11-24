@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import express, { Response } from 'express';
 import { and, count, desc, eq, gte, ilike, or, sql, sum } from 'drizzle-orm';
 import { z } from 'zod';
@@ -34,6 +35,7 @@ import {
   encryptSecret,
   generateFormSecretKey,
   generateTotpSecret,
+  hashPassword,
   maskApiKey,
   verifyTotpCode,
 } from '../crypto.ts';
@@ -42,7 +44,7 @@ import {
   sendEmailViaResend,
   testResendApiConnection,
 } from '../emailService.ts';
-import { getCurrentPeriodMonth } from '../bootstrap.ts';
+import { DEFAULT_INVOICE_TEMPLATE, getCurrentPeriodMonth } from '../bootstrap.ts';
 import { createEmailPasswordAccount } from './authRoutes.ts';
 
 export const adminRouter = express.Router();
@@ -634,6 +636,7 @@ adminRouter.get(
           uid: users.uid,
           email: users.email,
           displayName: users.displayName,
+          hasPassword: sql<boolean>`${users.passwordHash} is not null`,
           status: users.status,
           customFormLimit: users.customFormLimit,
           customSubmissionLimit: users.customSubmissionLimit,
@@ -641,6 +644,8 @@ adminRouter.get(
           customRateLimit: users.customRateLimit,
           lastLoginAt: users.lastLoginAt,
           createdAt: users.createdAt,
+          adminRoleSlug: adminRoles.slug,
+          adminRoleName: adminRoles.name,
           subscriptionId: subscriptions.id,
           subscriptionStatus: subscriptions.status,
           billingCycle: subscriptions.billingCycle,
@@ -655,6 +660,8 @@ adminRouter.get(
           storageBytes: subscriptionUsage.storageBytes,
         })
         .from(users)
+        .leftJoin(adminUsers, and(eq(adminUsers.userId, users.id), eq(adminUsers.isActive, true)))
+        .leftJoin(adminRoles, eq(adminUsers.roleId, adminRoles.id))
         .leftJoin(subscriptions, eq(subscriptions.userId, users.id))
         .leftJoin(subscriptionPlans, eq(subscriptions.planId, subscriptionPlans.id))
         .leftJoin(
@@ -684,6 +691,7 @@ adminRouter.get(
       return res.json({
         users: allUsers.map((u) => ({
           ...u,
+          hasPassword: Boolean(u.hasPassword),
           formsCount: fMap.get(u.id) || 0,
           totalSubmissionsCount: sMap.get(u.id) || 0,
         })),
@@ -767,6 +775,8 @@ adminRouter.patch(
       if (!Number.isInteger(targetUserId)) return res.status(400).json({ error: 'Invalid user ID' });
 
       const {
+        displayName,
+        email,
         status,
         planId,
         billingCycle,
@@ -774,11 +784,44 @@ adminRouter.patch(
         customSubmissionLimit,
         customEmailLimit,
         customRateLimit,
+        adminRoleSlug,
         resetUsage,
       } = req.body;
 
+      const [existingTarget] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, targetUserId))
+        .limit(1);
+      if (!existingTarget) return res.status(404).json({ error: 'User not found' });
+
       const userUpdates: Record<string, unknown> = {};
-      if (status === 'active' || status === 'suspended') userUpdates.status = status;
+      if (typeof displayName === 'string' && displayName.trim().length > 0) {
+        userUpdates.displayName = displayName.trim().slice(0, 100);
+      }
+      if (typeof email === 'string' && email.trim().length > 0) {
+        const normalized = email.trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+          return res.status(400).json({ error: 'Please enter a valid email address.' });
+        }
+        if (normalized !== existingTarget.email.toLowerCase()) {
+          const conflict = await db
+            .select({ id: users.id })
+            .from(users)
+            .where(eq(users.email, normalized))
+            .limit(1);
+          if (conflict.length > 0) {
+            return res.status(409).json({ error: 'Another user already uses that email address.' });
+          }
+          userUpdates.email = normalized;
+        }
+      }
+      if (status === 'active' || status === 'suspended') {
+        if (status === 'suspended' && targetUserId === req.dbUser!.id) {
+          return res.status(400).json({ error: 'You cannot suspend your own account.' });
+        }
+        userUpdates.status = status;
+      }
       if (customFormLimit !== undefined)
         userUpdates.customFormLimit = customFormLimit === null || customFormLimit === '' ? null : Number(customFormLimit);
       if (customSubmissionLimit !== undefined)
@@ -793,6 +836,31 @@ adminRouter.patch(
 
       if (Object.keys(userUpdates).length > 0) {
         await db.update(users).set(userUpdates).where(eq(users.id, targetUserId));
+      }
+
+      // Role update (Super Admin only; prevent self-demotion)
+      if (adminRoleSlug !== undefined && req.adminContext?.roleSlug === 'super_admin') {
+        if (targetUserId === req.dbUser!.id && adminRoleSlug !== 'super_admin') {
+          return res.status(400).json({ error: 'You cannot demote your own Super Admin role.' });
+        }
+        if (adminRoleSlug === '' || adminRoleSlug === null) {
+          await db.delete(adminUsers).where(eq(adminUsers.userId, targetUserId));
+        } else if (['super_admin', 'admin', 'support'].includes(adminRoleSlug)) {
+          const [role] = await db
+            .select()
+            .from(adminRoles)
+            .where(eq(adminRoles.slug, adminRoleSlug))
+            .limit(1);
+          if (role) {
+            await db
+              .insert(adminUsers)
+              .values({ userId: targetUserId, roleId: role.id, isActive: true })
+              .onConflictDoUpdate({
+                target: adminUsers.userId,
+                set: { roleId: role.id, isActive: true },
+              });
+          }
+        }
       }
 
       if (planId) {
@@ -844,8 +912,11 @@ adminRouter.patch(
       }
 
       await recordAdminAudit(req, 'customer.updated', 'user', targetUserId, {
+        displayName: userUpdates.displayName,
+        email: userUpdates.email,
         status,
         planId,
+        adminRoleSlug,
         customFormLimit,
         customSubmissionLimit,
         customEmailLimit,
@@ -856,6 +927,123 @@ adminRouter.patch(
     } catch (err) {
       console.error('PATCH /api/admin/users/:id failed:', err);
       return res.status(500).json({ error: 'Failed to update customer' });
+    }
+  }
+);
+
+function generateStrongTemporaryPassword(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*';
+  const bytes = crypto.randomBytes(14);
+  let result = '';
+  for (let i = 0; i < bytes.length; i++) {
+    result += chars[bytes[i] % chars.length];
+  }
+  return result;
+}
+
+adminRouter.post(
+  '/users/:id/reset-password',
+  requireAdminPermission('admin.users.manage'),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const targetUserId = Number(req.params.id);
+      if (!Number.isInteger(targetUserId)) return res.status(400).json({ error: 'Invalid user ID' });
+
+      const [targetUser] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, targetUserId))
+        .limit(1);
+      if (!targetUser) return res.status(404).json({ error: 'User not found' });
+
+      const generateTemporary = Boolean(req.body.generateTemporary);
+      const sendEmail = Boolean(req.body.sendEmail);
+      const chosenPassword = generateTemporary
+        ? generateStrongTemporaryPassword()
+        : String(req.body.newPassword || '');
+
+      if (chosenPassword.length < 8 || chosenPassword.length > 128) {
+        return res.status(400).json({ error: 'Password must be between 8 and 128 characters.' });
+      }
+
+      const nextHash = hashPassword(chosenPassword);
+      await db
+        .update(users)
+        .set({ passwordHash: nextHash })
+        .where(eq(users.id, targetUserId));
+
+      let emailSent = false;
+      if (sendEmail) {
+        try {
+          const result = await sendEmailViaResend({
+            userId: targetUser.id,
+            emailType: 'notification',
+            to: targetUser.email,
+            subject: 'BrosDev Forms — Your Account Password Was Reset',
+            html: `<div style="font-family:system-ui,sans-serif;padding:24px;background:#fff;border:1px solid #e5e5e5;border-radius:8px;max-width:540px;"><h2 style="margin:0 0 8px;color:#111;">Password Reset Confirmation</h2><p style="color:#444;line-height:1.6;">An administrator has updated the password for your BrosDev Forms account (${targetUser.email}). Please sign in and update your password from Account Settings.</p></div>`,
+          });
+          emailSent = result.status === 'accepted';
+        } catch {
+          emailSent = false;
+        }
+      }
+
+      await recordAdminAudit(req, 'customer.password_reset', 'user', targetUserId, {
+        email: targetUser.email,
+        mode: generateTemporary ? 'generated_temporary' : 'admin_defined',
+        notificationEmailed: emailSent,
+      });
+
+      return res.json({
+        reset: true,
+        temporaryPassword: generateTemporary ? chosenPassword : undefined,
+        emailSent,
+        message: 'User password has been updated.',
+      });
+    } catch (err) {
+      console.error('POST /api/admin/users/:id/reset-password failed:', err);
+      return res.status(500).json({ error: 'Failed to reset user password.' });
+    }
+  }
+);
+
+adminRouter.delete(
+  '/users/:id',
+  requireAdminPermission('admin.users.manage'),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const targetUserId = Number(req.params.id);
+      if (!Number.isInteger(targetUserId)) return res.status(400).json({ error: 'Invalid user ID' });
+      if (targetUserId === req.dbUser!.id) {
+        return res.status(400).json({ error: 'You cannot delete your own administrator account.' });
+      }
+
+      const [targetUser] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, targetUserId))
+        .limit(1);
+      if (!targetUser) return res.status(404).json({ error: 'User not found' });
+
+      const targetAdmin = await db
+        .select({ roleSlug: adminRoles.slug })
+        .from(adminUsers)
+        .innerJoin(adminRoles, eq(adminUsers.roleId, adminRoles.id))
+        .where(eq(adminUsers.userId, targetUserId))
+        .limit(1);
+
+      if (targetAdmin[0]?.roleSlug === 'super_admin' && req.adminContext?.roleSlug !== 'super_admin') {
+        return res.status(403).json({ error: 'Only a Super Admin can delete another Super Admin.' });
+      }
+
+      await db.delete(users).where(eq(users.id, targetUserId));
+      await recordAdminAudit(req, 'customer.deleted', 'user', targetUserId, {
+        email: targetUser.email,
+      });
+      return res.json({ deleted: true });
+    } catch (err) {
+      console.error('DELETE /api/admin/users/:id failed:', err);
+      return res.status(500).json({ error: 'Failed to delete user.' });
     }
   }
 );
@@ -1374,6 +1562,7 @@ adminRouter.get(
           id: invoices.id,
           invoiceNumber: invoices.invoiceNumber,
           customerEmail: users.email,
+          customerName: users.displayName,
           amountCents: invoices.amountCents,
           currency: invoices.currency,
           status: invoices.status,
@@ -1386,9 +1575,173 @@ adminRouter.get(
         .orderBy(desc(invoices.issuedAt))
         .limit(200);
 
-      return res.json({ invoices: rows });
+      const [templateRow] = await db
+        .select()
+        .from(platformSettings)
+        .where(eq(platformSettings.key, 'invoice_template'))
+        .limit(1);
+
+      return res.json({
+        invoices: rows,
+        invoiceTemplate: {
+          ...DEFAULT_INVOICE_TEMPLATE,
+          ...((templateRow?.value as Record<string, unknown>) || {}),
+        },
+      });
     } catch (err) {
       return res.status(500).json({ error: 'Failed to load invoices' });
+    }
+  }
+);
+
+adminRouter.get(
+  '/invoices/:id',
+  requireAdminPermission('admin.billing.view'),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const invoiceId = Number(req.params.id);
+      if (!Number.isInteger(invoiceId)) return res.status(400).json({ error: 'Invalid invoice ID' });
+
+      const rows = await db
+        .select({
+          invoice: invoices,
+          customerId: users.id,
+          customerEmail: users.email,
+          customerName: users.displayName,
+        })
+        .from(invoices)
+        .innerJoin(users, eq(invoices.userId, users.id))
+        .where(eq(invoices.id, invoiceId))
+        .limit(1);
+
+      if (!rows[0]) return res.status(404).json({ error: 'Invoice not found' });
+      const { invoice: inv, customerId, customerEmail, customerName } = rows[0];
+
+      const [payment] = inv.paymentId
+        ? await db.select().from(payments).where(eq(payments.id, inv.paymentId)).limit(1)
+        : [];
+
+      const [templateRow] = await db
+        .select()
+        .from(platformSettings)
+        .where(eq(platformSettings.key, 'invoice_template'))
+        .limit(1);
+
+      const template = {
+        ...DEFAULT_INVOICE_TEMPLATE,
+        ...((templateRow?.value as Record<string, unknown>) || {}),
+      };
+
+      const meta = (payment?.metadata || {}) as Record<string, any>;
+      let planName = String(meta.planName || '');
+      let billingCycle = String(meta.billingCycle || 'monthly');
+      let planDesc = 'BrosDev Forms SaaS Subscription';
+
+      if (!planName && inv.subscriptionId) {
+        const subRows = await db
+          .select({
+            planName: subscriptionPlans.name,
+            planDesc: subscriptionPlans.description,
+            billingCycle: subscriptions.billingCycle,
+          })
+          .from(subscriptions)
+          .innerJoin(subscriptionPlans, eq(subscriptions.planId, subscriptionPlans.id))
+          .where(eq(subscriptions.id, inv.subscriptionId))
+          .limit(1);
+        if (subRows[0]) {
+          planName = subRows[0].planName;
+          planDesc = subRows[0].planDesc || planDesc;
+          billingCycle = subRows[0].billingCycle;
+        }
+      }
+
+      return res.json({
+        invoice: {
+          id: inv.id,
+          invoiceNumber: inv.invoiceNumber,
+          amountCents: inv.amountCents,
+          currency: inv.currency,
+          status: inv.status,
+          periodStart: inv.periodStart,
+          periodEnd: inv.periodEnd,
+          issuedAt: inv.issuedAt,
+          customer: {
+            id: customerId,
+            email: customerEmail,
+            displayName: customerName || customerEmail,
+          },
+          plan: {
+            name: planName || 'Subscription',
+            billingCycle,
+            description: planDesc,
+          },
+          payment: payment
+            ? {
+                provider: payment.provider,
+                providerPaymentId: payment.providerPaymentId,
+                status: payment.status,
+                refundStatus: payment.refundStatus,
+                paymentMethod: String(meta.paymentMethod || 'card'),
+                cardBrand: meta.cardBrand ? String(meta.cardBrand) : undefined,
+                last4: meta.last4 ? String(meta.last4) : undefined,
+                cardholderName: meta.cardholderName ? String(meta.cardholderName) : undefined,
+                billingZip: meta.billingZip ? String(meta.billingZip) : undefined,
+                upiId: meta.upiId ? String(meta.upiId) : undefined,
+                bankName: meta.bankName ? String(meta.bankName) : undefined,
+                createdAt: payment.createdAt,
+              }
+            : null,
+          template,
+        },
+      });
+    } catch (err) {
+      console.error('GET /api/admin/invoices/:id failed:', err);
+      return res.status(500).json({ error: 'Failed to load invoice details' });
+    }
+  }
+);
+
+const invoiceTemplateSchema = z.object({
+  companyName: z.string().trim().min(1).max(120),
+  companyTagline: z.string().trim().max(160).optional().default(''),
+  companyAddress: z.string().trim().max(300).optional().default(''),
+  supportEmail: z.string().trim().email(),
+  website: z.string().trim().max(160).optional().default(''),
+  taxId: z.string().trim().max(80).optional().default(''),
+  taxRatePct: z.number().min(0).max(50),
+  invoicePrefix: z.string().trim().min(1).max(12),
+  accentColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional().default('#A90706'),
+  paymentTerms: z.string().trim().max(140).optional().default('Paid on receipt via BrosDev Pay'),
+  footerNotes: z.string().trim().max(600).optional().default(''),
+});
+
+adminRouter.put(
+  '/invoice-template',
+  requireAdminPermission('admin.billing.manage'),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const parsed = invoiceTemplateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res
+          .status(400)
+          .json({ error: parsed.error.issues[0]?.message || 'Invalid invoice template settings.' });
+      }
+      const val = {
+        ...parsed.data,
+        invoicePrefix: parsed.data.invoicePrefix.toUpperCase().replace(/[^A-Z0-9-]/g, '') || 'INV',
+      };
+      await db
+        .insert(platformSettings)
+        .values({ key: 'invoice_template', value: val, updatedBy: req.dbUser!.id, updatedAt: new Date() })
+        .onConflictDoUpdate({
+          target: platformSettings.key,
+          set: { value: val, updatedBy: req.dbUser!.id, updatedAt: new Date() },
+        });
+      await recordAdminAudit(req, 'invoice_template.updated', 'platform_settings', 'invoice_template', val);
+      return res.json({ saved: true, invoiceTemplate: val });
+    } catch (err) {
+      console.error('PUT /api/admin/invoice-template failed:', err);
+      return res.status(500).json({ error: 'Failed to save invoice template' });
     }
   }
 );

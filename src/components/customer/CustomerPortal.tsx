@@ -4,6 +4,7 @@ import {
   FileText,
   Inbox,
   CreditCard,
+  Settings,
   ShieldCheck,
   LogOut,
   Menu,
@@ -18,6 +19,7 @@ import { FormBuilderView } from './FormBuilderView';
 import { IntegrationView } from './IntegrationView';
 import { SubmissionsView } from './SubmissionsView';
 import { BillingView } from './BillingView';
+import { AccountSettingsView } from './AccountSettingsView';
 import { apiRequest } from '../../lib/api';
 
 type CustomerRoute =
@@ -26,7 +28,8 @@ type CustomerRoute =
   | { view: 'builder'; formId: number }
   | { view: 'integration'; form: FormRecord; initialSecret?: string }
   | { view: 'submissions'; formId?: number }
-  | { view: 'billing' };
+  | { view: 'billing' }
+  | { view: 'settings' };
 
 export const CustomerPortal: React.FC<{ onEnterAdmin: () => void }> = ({ onEnterAdmin }) => {
   const { workspace, logout, refreshWorkspace } = useAuth();
@@ -55,7 +58,7 @@ export const CustomerPortal: React.FC<{ onEnterAdmin: () => void }> = ({ onEnter
   };
 
   const navItems: Array<{
-    id: 'dashboard' | 'forms' | 'submissions' | 'billing';
+    id: 'dashboard' | 'forms' | 'submissions' | 'billing' | 'settings';
     label: string;
     icon: React.ComponentType<any>;
   }> = [
@@ -63,6 +66,7 @@ export const CustomerPortal: React.FC<{ onEnterAdmin: () => void }> = ({ onEnter
     { id: 'forms', label: 'Forms', icon: FileText },
     { id: 'submissions', label: 'Submissions', icon: Inbox },
     { id: 'billing', label: 'Billing & Usage', icon: CreditCard },
+    { id: 'settings', label: 'Account Settings', icon: Settings },
   ];
 
   const pageTitle =
@@ -76,7 +80,9 @@ export const CustomerPortal: React.FC<{ onEnterAdmin: () => void }> = ({ onEnter
             ? 'Integration Code'
             : route.view === 'submissions'
               ? 'Submissions'
-              : 'Billing & Usage';
+              : route.view === 'settings'
+                ? 'Account Settings'
+                : 'Billing & Usage';
 
   const sidebarContent = (
     <div className="flex flex-col h-full bg-white border-r border-[#E5E5E5]">
@@ -236,6 +242,9 @@ export const CustomerPortal: React.FC<{ onEnterAdmin: () => void }> = ({ onEnter
           )}
           {route.view === 'submissions' && <SubmissionsView initialFormId={route.formId} />}
           {route.view === 'billing' && <BillingView />}
+          {route.view === 'settings' && (
+            <AccountSettingsView onOpenBilling={() => setRoute({ view: 'billing' })} />
+          )}
         </main>
       </div>
     </div>

@@ -14,16 +14,23 @@ import {
   subscriptionPlans,
   subscriptions,
   subscriptionUsage,
+  users,
   FormEmailConfig,
   FormFieldConfig,
   FormSpamConfig,
 } from '../../db/schema.ts';
 import { AuthRequest, isAdmin2faVerified, requireAuth } from '../../middleware/auth.ts';
-import { getCurrentPeriodMonth, getUserUsageForMonth } from '../bootstrap.ts';
+import {
+  DEFAULT_INVOICE_TEMPLATE,
+  getCurrentPeriodMonth,
+  getUserUsageForMonth,
+} from '../bootstrap.ts';
 import {
   generateFormKey,
   generateFormSecretKey,
+  hashPassword,
   sanitizeSafeHttpUrl,
+  verifyPassword,
 } from '../crypto.ts';
 import { retryFailedEmailLog } from '../emailService.ts';
 
@@ -210,6 +217,8 @@ customerRouter.get('/me', async (req: AuthRequest, res: Response) => {
         displayName: user.displayName,
         photoUrl: user.photoUrl,
         status: user.status,
+        hasPassword: Boolean(user.passwordHash),
+        authProvider: user.uid.startsWith('local_') ? 'email' : 'google',
         createdAt: user.createdAt,
       },
       subscription: subCtx.subscription,
@@ -254,6 +263,96 @@ customerRouter.get('/me', async (req: AuthRequest, res: Response) => {
   } catch (err) {
     console.error('GET /api/me failed:', err);
     return res.status(500).json({ error: 'Failed to load user workspace' });
+  }
+});
+
+// 1b. Self-service Account Profile & Password Management
+const updateProfileSchema = z.object({
+  displayName: z.string().trim().min(1, 'Display name is required.').max(100),
+  email: z.string().trim().email('Enter a valid email address.').optional(),
+});
+
+customerRouter.patch('/account/profile', async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.dbUser!;
+    const parsed = updateProfileSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid profile data.' });
+    }
+
+    const updates: Record<string, unknown> = {
+      displayName: parsed.data.displayName,
+    };
+
+    if (parsed.data.email) {
+      const normalizedEmail = parsed.data.email.toLowerCase();
+      if (normalizedEmail !== user.email.toLowerCase()) {
+        const existing = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(eq(users.email, normalizedEmail))
+          .limit(1);
+        if (existing.length > 0) {
+          return res.status(409).json({ error: 'That email address is already in use by another account.' });
+        }
+        updates.email = normalizedEmail;
+      }
+    }
+
+    const [updated] = await db
+      .update(users)
+      .set(updates)
+      .where(eq(users.id, user.id))
+      .returning();
+
+    return res.json({
+      saved: true,
+      user: {
+        id: updated.id,
+        email: updated.email,
+        displayName: updated.displayName,
+      },
+    });
+  } catch (err) {
+    console.error('PATCH /api/account/profile failed:', err);
+    return res.status(500).json({ error: 'Failed to update profile settings.' });
+  }
+});
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().max(128).optional(),
+  newPassword: z.string().min(8, 'New password must be at least 8 characters.').max(128),
+});
+
+customerRouter.post('/account/password', async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.dbUser!;
+    const parsed = changePasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid password.' });
+    }
+
+    if (user.passwordHash) {
+      if (!parsed.data.currentPassword || !verifyPassword(parsed.data.currentPassword, user.passwordHash)) {
+        return res.status(400).json({ error: 'Current password is incorrect.' });
+      }
+    }
+
+    const newHash = hashPassword(parsed.data.newPassword);
+    await db
+      .update(users)
+      .set({ passwordHash: newHash })
+      .where(eq(users.id, user.id));
+
+    return res.json({
+      updated: true,
+      message: user.passwordHash
+        ? 'Your password has been updated.'
+        : 'Password created. You can now sign in with your email and password.',
+    });
+  } catch (err) {
+    console.error('POST /api/account/password failed:', err);
+    return res.status(500).json({ error: 'Failed to update password.' });
   }
 });
 
@@ -930,6 +1029,103 @@ customerRouter.get('/billing', async (req: AuthRequest, res: Response) => {
   }
 });
 
+// 5b. View single invoice detail (customer-scoped)
+customerRouter.get('/billing/invoices/:id', async (req: AuthRequest, res: Response) => {
+  try {
+    const invoiceId = Number(req.params.id);
+    if (!Number.isInteger(invoiceId)) return res.status(400).json({ error: 'Invalid invoice ID' });
+
+    const [inv] = await db
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.id, invoiceId), eq(invoices.userId, req.dbUser!.id)))
+      .limit(1);
+
+    if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+
+    const [payment] = inv.paymentId
+      ? await db.select().from(payments).where(eq(payments.id, inv.paymentId)).limit(1)
+      : [];
+
+    const [templateRow] = await db
+      .select()
+      .from(platformSettings)
+      .where(eq(platformSettings.key, 'invoice_template'))
+      .limit(1);
+
+    const template = {
+      ...DEFAULT_INVOICE_TEMPLATE,
+      ...((templateRow?.value as Record<string, unknown>) || {}),
+    };
+
+    const meta = (payment?.metadata || {}) as Record<string, any>;
+    let planName = String(meta.planName || '');
+    let billingCycle = String(meta.billingCycle || 'monthly');
+    let planDesc = 'BrosDev Forms SaaS Subscription';
+
+    if (!planName && inv.subscriptionId) {
+      const subRows = await db
+        .select({
+          planName: subscriptionPlans.name,
+          planDesc: subscriptionPlans.description,
+          billingCycle: subscriptions.billingCycle,
+        })
+        .from(subscriptions)
+        .innerJoin(subscriptionPlans, eq(subscriptions.planId, subscriptionPlans.id))
+        .where(eq(subscriptions.id, inv.subscriptionId))
+        .limit(1);
+      if (subRows[0]) {
+        planName = subRows[0].planName;
+        planDesc = subRows[0].planDesc || planDesc;
+        billingCycle = subRows[0].billingCycle;
+      }
+    }
+
+    return res.json({
+      invoice: {
+        id: inv.id,
+        invoiceNumber: inv.invoiceNumber,
+        amountCents: inv.amountCents,
+        currency: inv.currency,
+        status: inv.status,
+        periodStart: inv.periodStart,
+        periodEnd: inv.periodEnd,
+        issuedAt: inv.issuedAt,
+        customer: {
+          id: req.dbUser!.id,
+          email: req.dbUser!.email,
+          displayName: req.dbUser!.displayName || req.dbUser!.email,
+        },
+        plan: {
+          name: planName || 'Subscription',
+          billingCycle,
+          description: planDesc,
+        },
+        payment: payment
+          ? {
+              provider: payment.provider,
+              providerPaymentId: payment.providerPaymentId,
+              status: payment.status,
+              refundStatus: payment.refundStatus,
+              paymentMethod: String(meta.paymentMethod || 'card'),
+              cardBrand: meta.cardBrand ? String(meta.cardBrand) : undefined,
+              last4: meta.last4 ? String(meta.last4) : undefined,
+              cardholderName: meta.cardholderName ? String(meta.cardholderName) : undefined,
+              billingZip: meta.billingZip ? String(meta.billingZip) : undefined,
+              upiId: meta.upiId ? String(meta.upiId) : undefined,
+              bankName: meta.bankName ? String(meta.bankName) : undefined,
+              createdAt: payment.createdAt,
+            }
+          : null,
+        template,
+      },
+    });
+  } catch (err) {
+    console.error('GET /api/billing/invoices/:id failed:', err);
+    return res.status(500).json({ error: 'Failed to load invoice details' });
+  }
+});
+
 function passesLuhnCheck(digits: string): boolean {
   let sum = 0;
   let shouldDouble = false;
@@ -956,12 +1152,16 @@ function detectCardBrand(digits: string): string {
 const brosdevPayCheckoutSchema = z.object({
   planId: z.number().int().positive(),
   billingCycle: z.enum(['monthly', 'yearly']).default('monthly'),
-  cardholderName: z.string().min(2).max(120).optional(),
+  paymentMethod: z.enum(['card', 'upi', 'netbanking']).optional().default('card'),
+  cardholderName: z.string().max(120).optional(),
   cardNumber: z.string().optional(),
   expiryMonth: z.string().optional(),
   expiryYear: z.string().optional(),
   cvc: z.string().optional(),
   billingZip: z.string().max(20).optional(),
+  billingCountry: z.string().max(80).optional(),
+  upiId: z.string().max(120).optional(),
+  bankName: z.string().max(100).optional(),
 });
 
 customerRouter.post('/billing/brosdev-pay/checkout', async (req: AuthRequest, res: Response) => {
@@ -972,8 +1172,20 @@ customerRouter.post('/billing/brosdev-pay/checkout', async (req: AuthRequest, re
       return res.status(400).json({ error: 'Invalid checkout details.' });
     }
 
-    const { planId, billingCycle, cardholderName, cardNumber, expiryMonth, expiryYear, cvc, billingZip } =
-      parsed.data;
+    const {
+      planId,
+      billingCycle,
+      paymentMethod,
+      cardholderName,
+      cardNumber,
+      expiryMonth,
+      expiryYear,
+      cvc,
+      billingZip,
+      billingCountry,
+      upiId,
+      bankName,
+    } = parsed.data;
 
     const [targetPlan] = await db
       .select()
@@ -997,7 +1209,7 @@ customerRouter.post('/billing/brosdev-pay/checkout', async (req: AuthRequest, re
     if (billingCycle === 'yearly') periodEnd.setFullYear(periodEnd.getFullYear() + 1);
     else periodEnd.setMonth(periodEnd.getMonth() + 1);
 
-    // Free plan switch requires no card charge
+    // Free plan switch requires no charge
     if (priceCents === 0) {
       const [updated] = await db
         .update(subscriptions)
@@ -1020,63 +1232,111 @@ customerRouter.post('/billing/brosdev-pay/checkout', async (req: AuthRequest, re
       });
     }
 
-    // Paid plan checkout via BrosDev Pay
-    const digits = String(cardNumber || '').replace(/\D/g, '');
-    if (digits.length < 13 || digits.length > 19 || !passesLuhnCheck(digits)) {
-      return res.status(400).json({ error: 'Please enter a valid credit or debit card number.' });
-    }
-
-    const expM = parseInt(String(expiryMonth || ''), 10);
-    const rawY = String(expiryYear || '').trim();
-    const expY = rawY.length === 2 ? 2000 + parseInt(rawY, 10) : parseInt(rawY, 10);
-    if (
-      Number.isNaN(expM) ||
-      expM < 1 ||
-      expM > 12 ||
-      Number.isNaN(expY) ||
-      expY < now.getUTCFullYear() ||
-      (expY === now.getUTCFullYear() && expM < now.getUTCMonth() + 1)
-    ) {
-      return res.status(400).json({ error: 'Card expiration date is invalid or expired.' });
-    }
-
-    const cleanCvc = String(cvc || '').replace(/\D/g, '');
-    if (cleanCvc.length < 3 || cleanCvc.length > 4) {
-      return res.status(400).json({ error: 'Please enter a valid 3 or 4 digit security code.' });
-    }
-
-    const cardBrand = detectCardBrand(digits);
-    const last4 = digits.slice(-4);
     const txnRef = `bdp_txn_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
-    // Deterministic server-side decline rules for testing payment error states
-    const declineMap: Record<string, string> = {
-      '4000000000009995': 'Card declined: insufficient funds.',
-      '4000000000000002': 'Card declined by issuing bank.',
-      '4000000000000069': 'Card declined: card has expired.',
-      '4000000000000127': 'Card declined: security code verification failed.',
+    const paymentMeta: Record<string, unknown> = {
+      planId: targetPlan.id,
+      planName: targetPlan.name,
+      billingCycle,
+      paymentMethod,
     };
+    let receiptSummary = 'BrosDev Pay';
 
-    if (declineMap[digits]) {
-      await db.insert(payments).values({
-        userId,
-        provider: 'brosdev_pay',
-        providerPaymentId: txnRef,
-        amountCents: priceCents,
-        currency: 'USD',
-        status: 'failed',
-        refundStatus: 'none',
-        metadata: {
-          planId: targetPlan.id,
-          planName: targetPlan.name,
-          billingCycle,
-          cardBrand,
-          last4,
-          declineReason: declineMap[digits],
-        },
-      });
-      return res.status(402).json({ error: declineMap[digits], transactionId: txnRef });
+    if (paymentMethod === 'card') {
+      const digits = String(cardNumber || '').replace(/\D/g, '');
+      if (digits.length < 13 || digits.length > 19 || !passesLuhnCheck(digits)) {
+        return res.status(400).json({ error: 'Please enter a valid credit or debit card number.' });
+      }
+
+      const expM = parseInt(String(expiryMonth || ''), 10);
+      const rawY = String(expiryYear || '').trim();
+      const expY = rawY.length === 2 ? 2000 + parseInt(rawY, 10) : parseInt(rawY, 10);
+      if (
+        Number.isNaN(expM) ||
+        expM < 1 ||
+        expM > 12 ||
+        Number.isNaN(expY) ||
+        expY < now.getUTCFullYear() ||
+        (expY === now.getUTCFullYear() && expM < now.getUTCMonth() + 1)
+      ) {
+        return res.status(400).json({ error: 'Card expiration date is invalid or expired.' });
+      }
+
+      const cleanCvc = String(cvc || '').replace(/\D/g, '');
+      if (cleanCvc.length < 3 || cleanCvc.length > 4) {
+        return res.status(400).json({ error: 'Please enter a valid 3 or 4 digit security code.' });
+      }
+
+      const cardBrand = detectCardBrand(digits);
+      const last4 = digits.slice(-4);
+      paymentMeta.cardBrand = cardBrand;
+      paymentMeta.last4 = last4;
+      paymentMeta.cardholderName = (cardholderName || '').trim();
+      paymentMeta.billingZip = (billingZip || '').trim();
+      paymentMeta.billingCountry = (billingCountry || 'United States').trim();
+      receiptSummary = `${cardBrand} ending in ${last4}`;
+
+      const declineMap: Record<string, string> = {
+        '4000000000009995': 'Card declined: insufficient funds.',
+        '4000000000000002': 'Card declined by issuing bank.',
+        '4000000000000069': 'Card declined: card has expired.',
+        '4000000000000127': 'Card declined: security code verification failed.',
+      };
+
+      if (declineMap[digits]) {
+        await db.insert(payments).values({
+          userId,
+          provider: 'brosdev_pay',
+          providerPaymentId: txnRef,
+          amountCents: priceCents,
+          currency: 'USD',
+          status: 'failed',
+          refundStatus: 'none',
+          metadata: { ...paymentMeta, declineReason: declineMap[digits] },
+        });
+        return res.status(402).json({ error: declineMap[digits], transactionId: txnRef });
+      }
+    } else if (paymentMethod === 'upi') {
+      const cleanUpi = String(upiId || '').trim().toLowerCase();
+      if (!/^[a-z0-9._-]{2,}@[a-z]{2,}$/i.test(cleanUpi)) {
+        return res.status(400).json({ error: 'Enter a valid UPI ID (for example, name@upi).' });
+      }
+      paymentMeta.upiId = cleanUpi;
+      receiptSummary = `UPI (${cleanUpi})`;
+      if (cleanUpi.startsWith('decline@') || cleanUpi.startsWith('fail@')) {
+        await db.insert(payments).values({
+          userId,
+          provider: 'brosdev_pay',
+          providerPaymentId: txnRef,
+          amountCents: priceCents,
+          currency: 'USD',
+          status: 'failed',
+          refundStatus: 'none',
+          metadata: { ...paymentMeta, declineReason: 'UPI collect request declined by bank.' },
+        });
+        return res.status(402).json({
+          error: 'UPI authorization declined by your payment provider.',
+          transactionId: txnRef,
+        });
+      }
+    } else if (paymentMethod === 'netbanking') {
+      const cleanBank = String(bankName || '').trim();
+      if (cleanBank.length < 2) {
+        return res.status(400).json({ error: 'Select your bank to authorize payment.' });
+      }
+      paymentMeta.bankName = cleanBank;
+      receiptSummary = `NetBanking (${cleanBank})`;
     }
+
+    // Fetch invoice prefix from template settings
+    const [templateRow] = await db
+      .select()
+      .from(platformSettings)
+      .where(eq(platformSettings.key, 'invoice_template'))
+      .limit(1);
+    const prefix =
+      String((templateRow?.value as any)?.invoicePrefix || 'INV')
+        .toUpperCase()
+        .replace(/[^A-Z0-9-]/g, '') || 'INV';
 
     // Approved transaction: activate subscription, record payment, issue invoice
     const [sub] = await db
@@ -1120,19 +1380,11 @@ customerRouter.post('/billing/brosdev-pay/checkout', async (req: AuthRequest, re
         currency: 'USD',
         status: 'succeeded',
         refundStatus: 'none',
-        metadata: {
-          planId: targetPlan.id,
-          planName: targetPlan.name,
-          billingCycle,
-          cardholderName: (cardholderName || '').trim(),
-          cardBrand,
-          last4,
-          billingZip: (billingZip || '').trim(),
-        },
+        metadata: paymentMeta,
       })
       .returning();
 
-    const invoiceNumber = `INV-${now.getUTCFullYear()}-${String(payment.id).padStart(6, '0')}`;
+    const invoiceNumber = `${prefix}-${now.getUTCFullYear()}-${String(payment.id).padStart(6, '0')}`;
     const [invoice] = await db
       .insert(invoices)
       .values({
@@ -1151,10 +1403,13 @@ customerRouter.post('/billing/brosdev-pay/checkout', async (req: AuthRequest, re
     return res.json({
       approved: true,
       transactionId: txnRef,
+      invoiceId: invoice.id,
       invoiceNumber: invoice.invoiceNumber,
-      cardBrand,
-      last4,
-      message: `Payment approved via BrosDev Pay (${cardBrand} ending in ${last4}). ${targetPlan.name} plan is now active.`,
+      paymentMethod,
+      receiptSummary,
+      cardBrand: paymentMeta.cardBrand,
+      last4: paymentMeta.last4,
+      message: `Payment approved via BrosDev Pay (${receiptSummary}). ${targetPlan.name} plan is now active.`,
       subscription: sub,
     });
   } catch (err) {

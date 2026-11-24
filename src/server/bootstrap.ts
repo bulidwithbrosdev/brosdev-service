@@ -18,6 +18,21 @@ const INITIAL_SUPER_ADMIN_EMAIL = (
 
 let bootstrapPromise: Promise<void> | null = null;
 
+export const DEFAULT_INVOICE_TEMPLATE = {
+  companyName: 'BrosDev Forms',
+  companyTagline: 'Form Backend & Managed Email Routing Platform',
+  companyAddress: '548 Market Street, Suite 41200, San Francisco, CA 94104, USA',
+  supportEmail: 'billing@brosdev.xyz',
+  website: 'https://brosdev.xyz',
+  taxId: 'US-EIN 88-4920173',
+  taxRatePct: 0,
+  invoicePrefix: 'INV',
+  accentColor: '#A90706',
+  paymentTerms: 'Paid on receipt via BrosDev Pay',
+  footerNotes:
+    'Thank you for building with BrosDev Forms. For billing inquiries or tax documentation, reach out to billing@brosdev.xyz.',
+};
+
 export function getCurrentPeriodMonth(): string {
   const now = new Date();
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
@@ -308,6 +323,10 @@ async function runBootstrap(): Promise<void> {
         acceptedBrands: ['Visa', 'Mastercard', 'American Express'],
         resendWebhookEndpoint: '/api/webhooks/resend',
       },
+    },
+    {
+      key: 'invoice_template',
+      value: DEFAULT_INVOICE_TEMPLATE,
     },
   ];
 

@@ -124,6 +124,56 @@ export interface PlanRecord {
   subscriberCount?: number;
 }
 
+export interface InvoiceTemplateConfig {
+  companyName: string;
+  companyTagline: string;
+  companyAddress: string;
+  supportEmail: string;
+  website: string;
+  taxId: string;
+  taxRatePct: number;
+  invoicePrefix: string;
+  accentColor: string;
+  footerNotes: string;
+  paymentTerms: string;
+}
+
+export interface InvoiceDetailRecord {
+  id: number;
+  invoiceNumber: string;
+  amountCents: number;
+  currency: string;
+  status: string;
+  periodStart: string;
+  periodEnd: string;
+  issuedAt: string;
+  customer: {
+    id: number;
+    email: string;
+    displayName: string;
+  };
+  plan: {
+    name: string;
+    billingCycle: string;
+    description: string;
+  };
+  payment: {
+    provider: string;
+    providerPaymentId: string;
+    status: string;
+    refundStatus: string;
+    paymentMethod: string;
+    cardBrand?: string;
+    last4?: string;
+    cardholderName?: string;
+    billingZip?: string;
+    upiId?: string;
+    bankName?: string;
+    createdAt: string;
+  } | null;
+  template: InvoiceTemplateConfig;
+}
+
 export interface WorkspaceMe {
   user: {
     id: number;
@@ -132,6 +182,8 @@ export interface WorkspaceMe {
     displayName: string;
     photoUrl: string;
     status: string;
+    hasPassword: boolean;
+    authProvider: 'email' | 'google';
     createdAt: string;
   };
   subscription: {

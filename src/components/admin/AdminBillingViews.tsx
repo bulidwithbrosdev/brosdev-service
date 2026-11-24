@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Pencil, Archive, Save, X } from 'lucide-react';
+import { Plus, Pencil, Archive, Save, X, FileText } from 'lucide-react';
 import { apiRequest } from '../../lib/api';
-import { PlanRecord } from '../../types';
+import { InvoiceDetailRecord, InvoiceTemplateConfig, PlanRecord } from '../../types';
+import { InvoiceModal } from '../shared/InvoiceModal';
 
 const EMPTY_PLAN: Omit<PlanRecord, 'id'> = {
   slug: '',
@@ -498,51 +499,368 @@ export const AdminTransactionsView: React.FC = () => {
 
 export const AdminInvoicesView: React.FC = () => {
   const [rows, setRows] = useState<any[]>([]);
+  const [tab, setTab] = useState<'list' | 'template'>('list');
+  const [activeInvoice, setActiveInvoice] = useState<InvoiceDetailRecord | null>(null);
+  const [loadingInvoice, setLoadingInvoice] = useState(false);
+
+  const [tpl, setTpl] = useState<InvoiceTemplateConfig>({
+    companyName: 'BrosDev Forms',
+    companyTagline: 'Form Backend & Managed Email Routing Platform',
+    companyAddress: '548 Market Street, Suite 41200, San Francisco, CA 94104, USA',
+    supportEmail: 'billing@brosdev.xyz',
+    website: 'https://brosdev.xyz',
+    taxId: 'US-EIN 88-4920173',
+    taxRatePct: 0,
+    invoicePrefix: 'INV',
+    accentColor: '#A90706',
+    paymentTerms: 'Paid on receipt via BrosDev Pay',
+    footerNotes:
+      'Thank you for building with BrosDev Forms. For billing inquiries or tax documentation, reach out to billing@brosdev.xyz.',
+  });
+  const [savingTpl, setSavingTpl] = useState(false);
+  const [tplMsg, setTplMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const load = async () => {
+    const res = await apiRequest<{ invoices: any[]; invoiceTemplate?: InvoiceTemplateConfig }>(
+      '/api/admin/invoices'
+    );
+    setRows(res.invoices);
+    if (res.invoiceTemplate) setTpl(res.invoiceTemplate);
+  };
+
   useEffect(() => {
-    apiRequest<{ invoices: any[] }>('/api/admin/invoices').then((res) => setRows(res.invoices));
+    load();
   }, []);
 
+  const openInvoice = async (invoiceId: number) => {
+    setLoadingInvoice(true);
+    setActiveInvoice(null);
+    try {
+      const res = await apiRequest<{ invoice: InvoiceDetailRecord }>(
+        `/api/admin/invoices/${invoiceId}`
+      );
+      setActiveInvoice(res.invoice);
+    } finally {
+      setLoadingInvoice(false);
+    }
+  };
+
+  const openTemplatePreview = () => {
+    const now = new Date();
+    const nextMonth = new Date(now);
+    nextMonth.setMonth(nextMonth.getMonth() + 1);
+    setActiveInvoice({
+      id: 0,
+      invoiceNumber: `${tpl.invoicePrefix || 'INV'}-${now.getUTCFullYear()}-000104`,
+      amountCents: 4900,
+      currency: 'USD',
+      status: 'paid',
+      periodStart: now.toISOString(),
+      periodEnd: nextMonth.toISOString(),
+      issuedAt: now.toISOString(),
+      customer: {
+        id: 1,
+        displayName: 'Alex Morgan',
+        email: 'alex@acme-studios.com',
+      },
+      plan: {
+        name: 'Professional',
+        billingCycle: 'monthly',
+        description: 'Multiple email recipients, white-label delivery, and advanced analytics.',
+      },
+      payment: {
+        provider: 'brosdev_pay',
+        providerPaymentId: 'bdp_txn_preview_9842',
+        status: 'succeeded',
+        refundStatus: 'none',
+        paymentMethod: 'card',
+        cardBrand: 'Visa',
+        last4: '4242',
+        cardholderName: 'Alex Morgan',
+        billingZip: '94104',
+        createdAt: now.toISOString(),
+      },
+      template: tpl,
+    });
+  };
+
+  const saveTemplate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingTpl(true);
+    setTplMsg(null);
+    try {
+      const res = await apiRequest<{ invoiceTemplate: InvoiceTemplateConfig }>(
+        '/api/admin/invoice-template',
+        { method: 'PUT', body: tpl }
+      );
+      if (res.invoiceTemplate) setTpl(res.invoiceTemplate);
+      setTplMsg({ ok: true, text: 'Invoice template saved and applied to all invoice views.' });
+    } catch (err: any) {
+      setTplMsg({ ok: false, text: err.message || 'Failed to save invoice template.' });
+    } finally {
+      setSavingTpl(false);
+    }
+  };
+
   return (
-    <div className="bg-white border border-[#E5E5E5] rounded-lg overflow-hidden">
-      <div className="px-6 py-4 border-b border-[#E5E5E5]">
-        <h2 className="text-base font-bold text-[#111111]">Platform Invoices</h2>
+    <div className="space-y-4">
+      {/* Sub-navigation bar */}
+      <div className="bg-white border border-[#E5E5E5] rounded-lg p-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-1 p-1 bg-[#F5F5F5] rounded-lg">
+          <button
+            type="button"
+            onClick={() => setTab('list')}
+            className={`px-3.5 py-1.5 text-xs font-semibold rounded-md cursor-pointer ${
+              tab === 'list' ? 'bg-white text-[#111111] shadow-xs' : 'text-[#525252]'
+            }`}
+          >
+            Issued Invoices ({rows.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('template')}
+            className={`px-3.5 py-1.5 text-xs font-semibold rounded-md cursor-pointer ${
+              tab === 'template' ? 'bg-white text-[#111111] shadow-xs' : 'text-[#525252]'
+            }`}
+          >
+            Invoice Template Designer
+          </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={openTemplatePreview}
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-[#111111] bg-[#F5F5F5] hover:bg-[#E5E5E5] rounded-md cursor-pointer"
+        >
+          <FileText className="w-3.5 h-3.5 text-[#A90706]" />
+          Preview Invoice Template
+        </button>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-xs border-collapse">
-          <thead className="bg-[#FAFAFA] border-b border-[#E5E5E5] text-[#525252] font-semibold">
-            <tr>
-              <th className="py-3 px-6">Invoice #</th>
-              <th className="py-3 px-4">Customer</th>
-              <th className="py-3 px-4">Amount</th>
-              <th className="py-3 px-4">Status</th>
-              <th className="py-3 px-6 text-right">Issued</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[#EFEFEF]">
-            {rows.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="py-10 text-center text-[#737373]">
-                  No invoices generated yet.
-                </td>
-              </tr>
-            ) : (
-              rows.map((inv) => (
-                <tr key={inv.id}>
-                  <td className="py-3 px-6 font-mono font-semibold">{inv.invoiceNumber}</td>
-                  <td className="py-3 px-4">{inv.customerEmail}</td>
-                  <td className="py-3 px-4 font-mono tabular-nums">
-                    {(inv.amountCents / 100).toFixed(2)} {inv.currency}
-                  </td>
-                  <td className="py-3 px-4 capitalize font-semibold text-[#16A34A]">{inv.status}</td>
-                  <td className="py-3 px-6 text-right font-mono text-[#737373]">
-                    {new Date(inv.issuedAt).toLocaleDateString()}
-                  </td>
+
+      {tab === 'list' ? (
+        <div className="bg-white border border-[#E5E5E5] rounded-lg overflow-hidden">
+          <div className="px-6 py-4 border-b border-[#E5E5E5]">
+            <h2 className="text-base font-bold text-[#111111]">Platform Invoices</h2>
+            <p className="text-xs text-[#525252]">
+              View, print, or download any customer invoice using your configured template.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="bg-[#FAFAFA] border-b border-[#E5E5E5] text-[#525252] font-semibold">
+                <tr>
+                  <th className="py-3 px-6">Invoice #</th>
+                  <th className="py-3 px-4">Customer</th>
+                  <th className="py-3 px-4">Amount</th>
+                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4">Issued</th>
+                  <th className="py-3 px-6 text-right">Action</th>
                 </tr>
-              ))
+              </thead>
+              <tbody className="divide-y divide-[#EFEFEF]">
+                {rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-10 text-center text-[#737373]">
+                      No invoices generated yet.
+                    </td>
+                  </tr>
+                ) : (
+                  rows.map((inv) => (
+                    <tr key={inv.id} className="hover:bg-[#FAFAFA]">
+                      <td className="py-3 px-6 font-mono font-semibold text-[#111111]">
+                        {inv.invoiceNumber}
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="font-medium text-[#111111]">
+                          {inv.customerName || inv.customerEmail}
+                        </div>
+                        <div className="text-[11px] text-[#737373] font-mono">
+                          {inv.customerEmail}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 font-mono tabular-nums">
+                        ${(inv.amountCents / 100).toFixed(2)} {inv.currency}
+                      </td>
+                      <td className="py-3 px-4 capitalize font-semibold text-[#16A34A]">
+                        {inv.status}
+                      </td>
+                      <td className="py-3 px-4 font-mono text-[#737373]">
+                        {new Date(inv.issuedAt).toLocaleDateString()}
+                      </td>
+                      <td className="py-3 px-6 text-right">
+                        <button
+                          type="button"
+                          onClick={() => openInvoice(inv.id)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-[#111111] bg-[#F5F5F5] hover:bg-[#E5E5E5] rounded cursor-pointer"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          View Invoice
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <form
+          onSubmit={saveTemplate}
+          className="bg-white border border-[#E5E5E5] rounded-lg p-6 space-y-5"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-[#E5E5E5]">
+            <div>
+              <h2 className="text-base font-bold text-[#111111]">Invoice Template Configuration</h2>
+              <p className="text-xs text-[#525252]">
+                Customize your company header, tax settings, invoice numbering prefix, and footer
+                notes for all customer and admin invoices.
+              </p>
+            </div>
+            {tplMsg && (
+              <span
+                className={`text-xs font-semibold ${
+                  tplMsg.ok ? 'text-[#16A34A]' : 'text-[#A90706]'
+                }`}
+              >
+                {tplMsg.text}
+              </span>
             )}
-          </tbody>
-        </table>
-      </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold mb-1">Company / Brand Name</label>
+              <input
+                required
+                value={tpl.companyName}
+                onChange={(e) => setTpl({ ...tpl, companyName: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-[#D4D4D4] rounded-md"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-1">Company Tagline</label>
+              <input
+                value={tpl.companyTagline}
+                onChange={(e) => setTpl({ ...tpl, companyTagline: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-[#D4D4D4] rounded-md"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-xs font-semibold mb-1">Registered Billing Address</label>
+              <input
+                value={tpl.companyAddress}
+                onChange={(e) => setTpl({ ...tpl, companyAddress: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-[#D4D4D4] rounded-md"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-1">Billing Support Email</label>
+              <input
+                type="email"
+                required
+                value={tpl.supportEmail}
+                onChange={(e) => setTpl({ ...tpl, supportEmail: e.target.value })}
+                className="w-full px-3 py-2 text-sm font-mono border border-[#D4D4D4] rounded-md"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-1">Website URL</label>
+              <input
+                value={tpl.website}
+                onChange={(e) => setTpl({ ...tpl, website: e.target.value })}
+                className="w-full px-3 py-2 text-sm font-mono border border-[#D4D4D4] rounded-md"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-1">Tax ID / GSTIN / EIN</label>
+              <input
+                value={tpl.taxId}
+                onChange={(e) => setTpl({ ...tpl, taxId: e.target.value })}
+                className="w-full px-3 py-2 text-sm font-mono border border-[#D4D4D4] rounded-md"
+              />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-semibold mb-1">Tax Rate (%)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={50}
+                  step="0.01"
+                  value={tpl.taxRatePct}
+                  onChange={(e) => setTpl({ ...tpl, taxRatePct: Number(e.target.value) })}
+                  className="w-full px-2.5 py-2 text-sm font-mono border border-[#D4D4D4] rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1">Prefix</label>
+                <input
+                  maxLength={12}
+                  value={tpl.invoicePrefix}
+                  onChange={(e) =>
+                    setTpl({ ...tpl, invoicePrefix: e.target.value.toUpperCase() })
+                  }
+                  className="w-full px-2.5 py-2 text-sm font-mono border border-[#D4D4D4] rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1">Accent Color</label>
+                <input
+                  type="color"
+                  value={tpl.accentColor}
+                  onChange={(e) => setTpl({ ...tpl, accentColor: e.target.value })}
+                  className="w-full h-[38px] p-1 border border-[#D4D4D4] rounded-md bg-white cursor-pointer"
+                />
+              </div>
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-xs font-semibold mb-1">Payment Terms</label>
+              <input
+                value={tpl.paymentTerms}
+                onChange={(e) => setTpl({ ...tpl, paymentTerms: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-[#D4D4D4] rounded-md"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-xs font-semibold mb-1">Invoice Footer Notes</label>
+              <textarea
+                rows={3}
+                value={tpl.footerNotes}
+                onChange={(e) => setTpl({ ...tpl, footerNotes: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-[#D4D4D4] rounded-md"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#EFEFEF]">
+            <button
+              type="button"
+              onClick={openTemplatePreview}
+              className="px-4 py-2 text-xs font-semibold text-[#111111] bg-[#F5F5F5] hover:bg-[#E5E5E5] rounded-md cursor-pointer"
+            >
+              Live Preview
+            </button>
+            <button
+              type="submit"
+              disabled={savingTpl}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#A90706] hover:bg-[#8C0605] rounded-md cursor-pointer disabled:opacity-60"
+            >
+              <Save className="w-3.5 h-3.5" />
+              {savingTpl ? 'Saving...' : 'Save Template'}
+            </button>
+          </div>
+        </form>
+      )}
+
+      <InvoiceModal
+        invoice={activeInvoice}
+        loading={loadingInvoice}
+        onClose={() => {
+          setActiveInvoice(null);
+          setLoadingInvoice(false);
+        }}
+      />
     </div>
   );
 };
