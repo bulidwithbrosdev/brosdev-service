@@ -1085,7 +1085,8 @@ export async function handleFirestoreApi<T = any>(
         sendResult = { status: 'failed', error: e?.message || 'Resend dispatch failed' };
       }
 
-      emailDeliveryStatus = sendResult.status === 'sent' ? 'delivered' : 'failed';
+      const accepted = sendResult.status === 'accepted' || sendResult.status === 'sent';
+      emailDeliveryStatus = accepted ? 'delivered' : 'failed';
 
       for (const recipient of form.emailConfig.recipients) {
         const logId = nowNumericId();
@@ -1098,7 +1099,7 @@ export async function handleFirestoreApi<T = any>(
             recipient: String(recipient).slice(0, 254),
             sender: String(emailCfg.defaultSenderEmail || 'forms@brosdev.xyz'),
             subject: subject.slice(0, 300),
-            status: sendResult.status === 'sent' ? 'delivered' : 'failed',
+            status: accepted ? 'delivered' : 'failed',
             resendMessageId: String(sendResult.resendMessageId || ''),
             errorMessage: String(sendResult.error || '').slice(0, 1000),
             createdAt: serverTimestamp(),
@@ -1209,7 +1210,8 @@ export async function handleFirestoreApi<T = any>(
           fromEmail: emailCfg.defaultSenderEmail || 'forms@brosdev.xyz',
         }
       );
-      const nextStatus = sendRes.status === 'sent' ? 'delivered' : 'failed';
+      const nextStatus =
+        sendRes.status === 'accepted' || sendRes.status === 'sent' ? 'delivered' : 'failed';
       await updateDoc(doc(db, 'submissions', target.docId), {
         emailDeliveryStatus: nextStatus,
         updatedAt: serverTimestamp(),
@@ -1831,8 +1833,9 @@ export async function handleFirestoreApi<T = any>(
 
     // 5. Admin Resend Configuration & Email Logs
     if (pathname === '/api/admin/resend' && upperMethod === 'GET') {
-      const [emailCfg, emailSnap, healthResp] = await Promise.all([
+      const [emailCfg, secretCfg, emailSnap, healthResp] = await Promise.all([
         getSetting('email_provider_public'),
+        getSetting('resend_secret'),
         getDocs(collection(db, 'emailLogs')),
         fetch('/api/health').then((r) => r.json()).catch(() => ({ resendConfigured: false })),
       ]);
@@ -1841,18 +1844,32 @@ export async function handleFirestoreApi<T = any>(
         toIso(d.data().createdAt).startsWith(currentMonth)
       ).length;
 
+      const hasEnvKey = Boolean(healthResp?.resendConfigured);
+      const storedKey = typeof secretCfg?.apiKey === 'string' ? secretCfg.apiKey.trim() : '';
+      const hasApiKey = hasEnvKey || Boolean(storedKey);
+      const apiKeyMasked = hasEnvKey
+        ? 're_•••••••••••• (Server Env)'
+        : storedKey
+          ? `${storedKey.slice(0, 6)}••••••••${storedKey.slice(-4)}`
+          : '';
+
       return {
         config: {
           provider: 'resend',
-          hasApiKey: Boolean(healthResp?.resendConfigured),
-          apiKeyMasked: healthResp?.resendConfigured ? 're_•••••••••••• (Server Env)' : '',
+          hasApiKey,
+          apiKeyMasked,
           sendingDomain: String(emailCfg.sendingDomain || 'brosdev.xyz'),
           defaultSenderName: String(emailCfg.defaultSenderName || 'BrosDev Forms'),
           defaultSenderEmail: String(emailCfg.defaultSenderEmail || 'forms@brosdev.xyz'),
           defaultReplyTo: String(emailCfg.defaultReplyTo || 'support@brosdev.xyz'),
           defaultEmailFooter: String(emailCfg.defaultEmailFooter || 'Delivered securely via BrosDev Forms.'),
           globalNotificationsEnabled: emailCfg.globalNotificationsEnabled !== false,
-          connectionStatus: healthResp?.resendConfigured ? 'connected' : 'unconfigured',
+          connectionStatus:
+            emailCfg.connectionStatus === 'connected' || emailCfg.connectionStatus === 'error'
+              ? emailCfg.connectionStatus
+              : hasApiKey
+                ? 'connected'
+                : 'unconfigured',
           lastTestedAt: emailCfg.lastTestedAt || null,
           lastError: emailCfg.lastError || null,
           rateLimitLimit: null,
@@ -1867,6 +1884,14 @@ export async function handleFirestoreApi<T = any>(
 
     if (pathname === '/api/admin/resend' && upperMethod === 'PUT') {
       const current = await getSetting('email_provider_public');
+      const incomingKey = typeof body?.apiKey === 'string' ? body.apiKey.trim() : '';
+      if (incomingKey) {
+        await setDoc(doc(db, 'settings', 'resend_secret'), {
+          key: 'resend_secret',
+          value: { apiKey: incomingKey },
+          updatedAt: serverTimestamp(),
+        });
+      }
       const nextValue = {
         ...current,
         sendingDomain: String(body?.sendingDomain || current.sendingDomain || 'brosdev.xyz'),
@@ -1886,19 +1911,54 @@ export async function handleFirestoreApi<T = any>(
     }
 
     if (pathname === '/api/admin/resend/test-connection' && upperMethod === 'POST') {
-      const res = await serverBackendFetch<{ connected: boolean; error?: string; domains?: any[] }>(
-        '/api/resend/test-connection',
-        {}
-      );
-      return res as T;
+      const [current, secretCfg] = await Promise.all([
+        getSetting('email_provider_public'),
+        getSetting('resend_secret'),
+      ]);
+      const storedKey = typeof secretCfg?.apiKey === 'string' ? secretCfg.apiKey.trim() : '';
+      const res = await serverBackendFetch<{
+        ok: boolean;
+        connected?: boolean;
+        message?: string;
+        error?: string;
+        domains?: Array<{ name: string; status: string }>;
+      }>('/api/resend/test-connection', storedKey ? { apiKey: storedKey } : {});
+
+      const ok = Boolean(res.ok ?? res.connected);
+      const message =
+        res.message ||
+        res.error ||
+        (ok ? 'Connected to Resend successfully.' : 'Failed to connect to Resend.');
+
+      await setDoc(doc(db, 'settings', 'email_provider_public'), {
+        key: 'email_provider_public',
+        value: {
+          ...current,
+          connectionStatus: ok ? 'connected' : 'error',
+          lastTestedAt: new Date().toISOString(),
+          lastError: ok ? null : message,
+        },
+        updatedAt: serverTimestamp(),
+      });
+
+      return {
+        ok,
+        message,
+        domains: Array.isArray(res.domains) ? res.domains : [],
+      } as T;
     }
 
     if (pathname === '/api/admin/resend/send-test' && upperMethod === 'POST') {
-      const emailCfg = await getSetting('email_provider_public');
+      const [emailCfg, secretCfg] = await Promise.all([
+        getSetting('email_provider_public'),
+        getSetting('resend_secret'),
+      ]);
+      const storedKey = typeof secretCfg?.apiKey === 'string' ? secretCfg.apiKey.trim() : '';
       const to = String(body?.to || user.email || '');
       const res = await serverBackendFetch<{ status: string; resendMessageId?: string; error?: string }>(
         '/api/resend/send',
         {
+          ...(storedKey ? { apiKey: storedKey } : {}),
           to: [to],
           subject: 'BrosDev Forms — Resend Test Email',
           html: '<p>Your BrosDev Forms Resend email integration is active and working properly.</p>',
@@ -1906,6 +1966,7 @@ export async function handleFirestoreApi<T = any>(
           fromEmail: emailCfg.defaultSenderEmail || 'forms@brosdev.xyz',
         }
       );
+      const accepted = res.status === 'accepted' || res.status === 'sent';
       const logId = nowNumericId();
       await setDoc(doc(db, 'emailLogs', `elog_${logId}`), {
         id: logId,
@@ -1915,13 +1976,17 @@ export async function handleFirestoreApi<T = any>(
         recipient: to.slice(0, 254),
         sender: String(emailCfg.defaultSenderEmail || 'forms@brosdev.xyz'),
         subject: 'BrosDev Forms — Resend Test Email',
-        status: res.status === 'sent' ? 'delivered' : 'failed',
+        status: accepted ? 'delivered' : 'failed',
         resendMessageId: String(res.resendMessageId || ''),
         errorMessage: String(res.error || '').slice(0, 1000),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
-      return res as T;
+      return {
+        status: accepted ? 'accepted' : 'failed',
+        resendMessageId: res.resendMessageId,
+        error: res.error,
+      } as T;
     }
 
     if (pathname === '/api/admin/email-logs' && upperMethod === 'GET') {
@@ -1953,17 +2018,21 @@ export async function handleFirestoreApi<T = any>(
       const found = snap.docs.find((d) => Number(d.data().id) === logId);
       if (!found) throw new Error('Email log not found.');
       const row = found.data();
+      const secretCfg = await getSetting('resend_secret');
+      const storedKey = typeof secretCfg?.apiKey === 'string' ? secretCfg.apiKey.trim() : '';
       const sendRes = await serverBackendFetch<{ status: string; resendMessageId?: string; error?: string }>(
         '/api/resend/send',
         {
+          ...(storedKey ? { apiKey: storedKey } : {}),
           to: [row.recipient],
           subject: row.subject,
           html: '<p>Retried notification email from BrosDev Forms.</p>',
           fromEmail: row.sender,
         }
       );
+      const accepted = sendRes.status === 'accepted' || sendRes.status === 'sent';
       await updateDoc(doc(db, 'emailLogs', found.id), {
-        status: sendRes.status === 'sent' ? 'delivered' : 'failed',
+        status: accepted ? 'delivered' : 'failed',
         resendMessageId: String(sendRes.resendMessageId || ''),
         errorMessage: String(sendRes.error || ''),
         updatedAt: serverTimestamp(),

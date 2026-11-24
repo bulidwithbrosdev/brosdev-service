@@ -1,3 +1,3 @@
-import handler from '../_handler.js';
+import { handleEmbedScript } from '../_lib.js';
 
-export default handler;
+export default handleEmbedScript;

@@ -1,3 +1,3 @@
-import handler from '../_handler.js';
+import { handleResendSend } from '../_lib.js';
 
-export default handler;
+export default handleResendSend;
