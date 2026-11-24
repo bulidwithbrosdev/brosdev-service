@@ -1,0 +1,8 @@
+{
+  "name": "BrosDev Forms",
+  "description": "Production-grade form builder, submission API, and Resend email routing SaaS platform with Super Admin operations panel.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
