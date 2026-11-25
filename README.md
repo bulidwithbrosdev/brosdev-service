@@ -70,7 +70,7 @@ npm run deploy
    - **Build output directory**: `dist`
    - **Root directory**: `/`
 4. Under **Environment variables**, add the required variables (see [Environment Variables](#-environment-variables)).
-5. Click **Save and Deploy**. SPA routing is pre-configured via `public/_redirects`.
+5. Click **Save and Deploy**. SPA routing is pre-configured via `wrangler.jsonc` (`not_found_handling: single-page-application`).
 
 ---
 
