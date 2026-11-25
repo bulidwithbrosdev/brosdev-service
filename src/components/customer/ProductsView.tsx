@@ -12,12 +12,16 @@ import {
   ArrowRight,
   Lock,
   Layers,
+  LayoutGrid,
+  Send,
 } from 'lucide-react';
 import { getDevServicesSummary } from '../../lib/devServicesApi';
 import { hasPlanFeature, type PlanLockKey } from '../../lib/planLimits';
 import type { DevServicesSummary, WorkspaceMe } from '../../types';
 
 export type ProductNavTarget =
+  | 'widgets'
+  | 'campaigns'
   | 'forms'
   | 'submissions'
   | 'projects'
@@ -65,6 +69,38 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
   }, []);
 
   const coreProducts = [
+    {
+      id: 'widgets',
+      title: 'Website Components & Widgets',
+      tier: 'Phase 2 · 28 Modules',
+      description:
+        'Visual 3-panel builder for 20 UI components & 8 business widgets with Shadow DOM embeds, hosted URLs, versioning, and analytics.',
+      metric: loading
+        ? 'Loading...'
+        : `${summary?.publishedWidgetsCount ?? 0} / ${workspace.limits.maxWidgets ?? 2} published`,
+      subMetric: loading
+        ? ''
+        : `${summary?.widgetsCount ?? 0} total components · Shadow DOM embed`,
+      icon: LayoutGrid,
+      actionLabel: 'Open Widget Builder',
+      onClick: () => onNavigate('widgets'),
+      locked: false,
+    },
+    {
+      id: 'campaigns',
+      title: 'Newsletter & Email Campaign Studio',
+      tier: 'Phase 3 · Resend Powered',
+      description:
+        'Visual drag-and-drop email builder, 10 announcement & newsletter templates, subscriber CRM, dynamic segments, scheduling, and Resend webhooks.',
+      metric: loading
+        ? 'Loading...'
+        : `${summary?.campaignsCount ?? 0} campaign(s) · ${(workspace.limits.maxCampaignEmailsPerMonth ?? 500).toLocaleString()} emails/mo`,
+      subMetric: 'One-click signed unsubscribe · Verified Resend delivery',
+      icon: Send,
+      actionLabel: 'Open Campaign Studio',
+      onClick: () => onNavigate('campaigns'),
+      locked: false,
+    },
     {
       id: 'forms',
       title: 'Form Submission API',
@@ -259,7 +295,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
           <h2 className="text-sm font-bold text-[#111111]">Core Backend Services</h2>
           <span className="text-xs text-[#737373]">Production APIs · Firestore &amp; Resend</span>
         </div>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           {coreProducts.map((item) => {
             const Icon = item.icon;
             return (

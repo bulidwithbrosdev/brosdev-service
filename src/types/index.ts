@@ -108,6 +108,13 @@ export interface PlanFeatures {
   customShortSlugs: boolean;
   svgQrExport: boolean;
   scopedApiKeys: boolean;
+  widgetCustomCss: boolean;
+  widgetDomainRestrictions: boolean;
+  campaignCustomTemplates: boolean;
+  campaignScheduling: boolean;
+  campaignSegmentation: boolean;
+  campaignAutomation: boolean;
+  multipleSenderIdentities: boolean;
 }
 
 export interface PlanRecord {
@@ -131,6 +138,8 @@ export interface PlanRecord {
   maxSubscribers: number;
   maxShortLinks: number;
   maxTeamSeats: number;
+  maxWidgets: number;
+  maxCampaignEmailsPerMonth: number;
   features: PlanFeatures;
   isActive: boolean;
   isArchived: boolean;
@@ -235,6 +244,8 @@ export interface WorkspaceMe {
     maxSubscribers: number;
     maxShortLinks: number;
     maxTeamSeats: number;
+    maxWidgets: number;
+    maxCampaignEmailsPerMonth: number;
   };
   platformEmailSender: {
     sendingDomain: string;
@@ -285,6 +296,8 @@ export type DeveloperProductId =
   | 'email'
   | 'webhooks'
   | 'newsletter'
+  | 'campaigns'
+  | 'widgets'
   | 'qr_generator'
   | 'url_shortener'
   | 'pdf_generator';
@@ -427,6 +440,9 @@ export interface DevServicesSummary {
   shortLinksCount: number;
   shortLinkClicks: number;
   utilityRecordsCount: number;
+  widgetsCount?: number;
+  publishedWidgetsCount?: number;
+  campaignsCount?: number;
 }
 
 

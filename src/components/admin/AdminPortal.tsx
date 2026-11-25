@@ -21,6 +21,8 @@ import {
   X,
   LogOut,
   Lock,
+  LayoutGrid,
+  Megaphone,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { apiRequest } from '../../lib/api';
@@ -45,13 +47,17 @@ import {
   AdminRolesView,
   AdminUsageLimitsView,
 } from './AdminSystemViews';
+import { AdminWidgetsView } from '../../widget-admin/AdminWidgetsView';
+import { AdminCampaignsView } from '../../campaigns/AdminCampaignsView';
 
 type AdminSection =
   | 'dashboard'
   | 'users'
+  | 'widgets'
   | 'forms'
   | 'submissions'
   | 'api-monitoring'
+  | 'campaigns'
   | 'resend'
   | 'email-logs'
   | 'email-usage'
@@ -76,6 +82,7 @@ const NAV_GROUPS: Array<{
     title: 'Platform',
     items: [
       { id: 'users', label: 'Users', icon: Users, perm: 'admin.users.view' },
+      { id: 'widgets', label: 'Website Widgets', icon: LayoutGrid, perm: 'admin.forms.view' },
       { id: 'forms', label: 'Forms', icon: FileText, perm: 'admin.forms.view' },
       { id: 'submissions', label: 'Submissions', icon: Inbox, perm: 'admin.submissions.view' },
       { id: 'api-monitoring', label: 'API Monitoring', icon: Activity, perm: 'admin.api.view' },
@@ -84,6 +91,7 @@ const NAV_GROUPS: Array<{
   {
     title: 'Email',
     items: [
+      { id: 'campaigns', label: 'Email Campaigns', icon: Megaphone, perm: 'admin.emails.view' },
       { id: 'resend', label: 'Resend Configuration', icon: Send, perm: 'admin.resend.view' },
       { id: 'email-logs', label: 'Email Logs', icon: Mail, perm: 'admin.emails.view' },
       { id: 'email-usage', label: 'Email Usage', icon: BarChart3, perm: 'admin.emails.view' },
@@ -302,9 +310,11 @@ export const AdminPortal: React.FC<{ onExitAdmin: () => void }> = ({ onExitAdmin
         <main className="p-6 md:p-8 max-w-[1400px] w-full mx-auto">
           {section === 'dashboard' && <AdminDashboardView />}
           {section === 'users' && <AdminUsersView />}
+          {section === 'widgets' && <AdminWidgetsView />}
           {section === 'forms' && <AdminFormsView />}
           {section === 'submissions' && <AdminSubmissionsView />}
           {section === 'api-monitoring' && <AdminApiMonitoringView />}
+          {section === 'campaigns' && <AdminCampaignsView />}
           {section === 'resend' && <AdminResendView />}
           {section === 'email-logs' && <AdminEmailLogsView />}
           {section === 'email-usage' && <AdminEmailUsageView />}

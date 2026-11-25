@@ -11,13 +11,31 @@ import {
   handleSealRouting,
   handleShortLinkRedirect,
   handleWebhookDispatch,
+  handlePublicWidgetConfig,
+  handleWidgetEmbedLoaderJs,
+  handleWidgetEventTrack,
 } from '../../api/_lib.js';
+import {
+  handleCampaignDomains,
+  handleCampaignSend,
+  handleCampaignTestSend,
+  handleCampaignUnsubscribe,
+  handleCronCampaigns,
+  handleResendWebhook,
+} from '../../api/_campaigns.js';
 
 export function createApiApp() {
   const app = express();
   app.set('trust proxy', 1);
 
-  app.use(express.json({ limit: '2mb' }));
+  app.use(
+    express.json({
+      limit: '2mb',
+      verify: (req, _res, buf) => {
+        (req as Request & { rawBody?: string }).rawBody = buf.toString('utf8');
+      },
+    })
+  );
   app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
   app.all('/api/health', (req: Request, res: Response) => {
@@ -74,6 +92,52 @@ export function createApiApp() {
 
   app.get('/embed/:formKey', (req: Request, res: Response) => {
     void handleEmbedScript(req, res, req.params.formKey);
+  });
+
+  // Phase 2 — Public Website Widgets Embed Loader, Config & Analytics
+  app.get('/embed.js', (req: Request, res: Response) => {
+    void handleWidgetEmbedLoaderJs(req, res);
+  });
+
+  app.get('/api/widgets/embed', (req: Request, res: Response) => {
+    void handleWidgetEmbedLoaderJs(req, res);
+  });
+
+  app.get('/api/widgets/embed.js', (req: Request, res: Response) => {
+    void handleWidgetEmbedLoaderJs(req, res);
+  });
+
+  app.all('/api/widgets/public/:publicId', (req: Request, res: Response) => {
+    void handlePublicWidgetConfig(req, res, req.params.publicId);
+  });
+
+  app.all('/api/widgets/events', (req: Request, res: Response) => {
+    void handleWidgetEventTrack(req, res);
+  });
+
+  // Phase 3 — Email Campaign Studio, Resend Domains, Webhooks, Unsubscribe & Cron
+  app.all('/api/campaigns/domains', (req: Request, res: Response) => {
+    void handleCampaignDomains(req, res);
+  });
+
+  app.all('/api/campaigns/unsubscribe', (req: Request, res: Response) => {
+    void handleCampaignUnsubscribe(req, res);
+  });
+
+  app.all('/api/campaigns/:id/test', (req: Request, res: Response) => {
+    void handleCampaignTestSend(req, res, req.params.id);
+  });
+
+  app.all('/api/campaigns/:id/send', (req: Request, res: Response) => {
+    void handleCampaignSend(req, res, req.params.id);
+  });
+
+  app.all('/api/webhooks/resend', (req: Request, res: Response) => {
+    void handleResendWebhook(req, res);
+  });
+
+  app.all('/api/cron/campaigns', (req: Request, res: Response) => {
+    void handleCronCampaigns(req, res);
   });
 
   app.use('/api', (_req: Request, res: Response) => {

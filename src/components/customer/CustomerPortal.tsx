@@ -19,6 +19,14 @@ import {
   X,
   Plus,
   Lock,
+  LayoutGrid,
+  Paintbrush,
+  Globe,
+  BarChart3,
+  Mail,
+  Megaphone,
+  LayoutTemplate,
+  Send,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { FormRecord } from '../../types';
@@ -37,6 +45,8 @@ import { TeamView } from './TeamView';
 import { BillingView } from './BillingView';
 import { DocsView } from './DocsView';
 import { AccountSettingsView } from './AccountSettingsView';
+import { WidgetsDashboardView, type WidgetsHubTab } from '../../widgets/WidgetsDashboardView';
+import { CampaignsHubView, type CampaignsHubSection } from '../../campaigns/CampaignsHubView';
 import { UpgradeModal } from '../shared/UpgradeModal';
 import { apiRequest } from '../../lib/api';
 import { hasPlanFeature, isFormLimitReached, type PlanLockKey } from '../../lib/planLimits';
@@ -45,6 +55,15 @@ type CustomerRoute =
   | { view: 'dashboard' }
   | { view: 'products' }
   | { view: 'projects' }
+  | { view: 'widgets'; subTab?: WidgetsHubTab; startInBuilder?: boolean }
+  | { view: 'widget-builder' }
+  | { view: 'widget-domains' }
+  | { view: 'widget-analytics' }
+  | { view: 'campaigns'; subSection?: CampaignsHubSection }
+  | { view: 'campaign-subscribers' }
+  | { view: 'campaign-templates' }
+  | { view: 'campaign-analytics' }
+  | { view: 'campaign-domains' }
   | { view: 'forms' }
   | { view: 'builder'; formId: number }
   | { view: 'integration'; form: FormRecord; initialSecret?: string }
@@ -62,6 +81,15 @@ type SidebarNavId =
   | 'dashboard'
   | 'products'
   | 'projects'
+  | 'widgets'
+  | 'widget-builder'
+  | 'widget-domains'
+  | 'widget-analytics'
+  | 'campaigns'
+  | 'campaign-subscribers'
+  | 'campaign-templates'
+  | 'campaign-analytics'
+  | 'campaign-domains'
   | 'forms'
   | 'submissions'
   | 'webhooks'
@@ -127,6 +155,25 @@ export const CustomerPortal: React.FC<{ onEnterAdmin: () => void }> = ({ onEnter
       ],
     },
     {
+      title: 'Website Components',
+      items: [
+        { id: 'widgets', label: 'All Components', icon: LayoutGrid },
+        { id: 'widget-builder', label: 'Widget Builder', icon: Paintbrush },
+        { id: 'widget-domains', label: 'Domains & Embeds', icon: Globe },
+        { id: 'widget-analytics', label: 'Widget Analytics', icon: BarChart3 },
+      ],
+    },
+    {
+      title: 'Email Campaigns',
+      items: [
+        { id: 'campaigns', label: 'Campaigns Studio', icon: Mail },
+        { id: 'campaign-subscribers', label: 'Subscribers & Lists', icon: Users },
+        { id: 'campaign-templates', label: 'Templates & Automations', icon: LayoutTemplate },
+        { id: 'campaign-analytics', label: 'Campaign Analytics', icon: BarChart3 },
+        { id: 'campaign-domains', label: 'Sender & Domains', icon: Send },
+      ],
+    },
+    {
       title: 'Developer Services',
       items: [
         { id: 'forms', label: 'Forms API', icon: FileText },
@@ -152,6 +199,15 @@ export const CustomerPortal: React.FC<{ onEnterAdmin: () => void }> = ({ onEnter
     dashboard: 'Overview',
     products: 'Products Hub',
     projects: 'Projects & Domains',
+    widgets: 'Website Components & Widgets',
+    'widget-builder': 'Visual Widget Builder',
+    'widget-domains': 'Widget Domains & Embeds',
+    'widget-analytics': 'Widget Analytics',
+    campaigns: 'Email Campaigns Studio',
+    'campaign-subscribers': 'Subscribers, Lists & Segments',
+    'campaign-templates': 'Email Templates & Automations',
+    'campaign-analytics': 'Campaign Delivery Analytics',
+    'campaign-domains': 'Sender Identities & Domains',
     forms: 'Forms API',
     builder: 'Form Builder',
     integration: 'Integration Code',
@@ -344,6 +400,71 @@ export const CustomerPortal: React.FC<{ onEnterAdmin: () => void }> = ({ onEnter
             <ProjectsView
               workspace={workspace}
               onRequestUpgrade={(key) => setUpgradeLockKey(key)}
+            />
+          )}
+          {route.view === 'widgets' && workspace && (
+            <WidgetsDashboardView
+              workspace={workspace}
+              initialTab={route.subTab || 'all'}
+              startInBuilder={route.startInBuilder}
+              onRequestUpgrade={(key) => setUpgradeLockKey(key)}
+            />
+          )}
+          {route.view === 'widget-builder' && workspace && (
+            <WidgetsDashboardView
+              workspace={workspace}
+              initialTab="all"
+              startInBuilder
+              onRequestUpgrade={(key) => setUpgradeLockKey(key)}
+            />
+          )}
+          {route.view === 'widget-domains' && workspace && (
+            <WidgetsDashboardView
+              workspace={workspace}
+              initialTab="domains"
+              onRequestUpgrade={(key) => setUpgradeLockKey(key)}
+            />
+          )}
+          {route.view === 'widget-analytics' && workspace && (
+            <WidgetsDashboardView
+              workspace={workspace}
+              initialTab="analytics"
+              onRequestUpgrade={(key) => setUpgradeLockKey(key)}
+            />
+          )}
+          {route.view === 'campaigns' && workspace && (
+            <CampaignsHubView
+              workspace={workspace}
+              initialSection={route.subSection || 'overview'}
+              onRequireUpgrade={(key) => setUpgradeLockKey(key)}
+            />
+          )}
+          {route.view === 'campaign-subscribers' && workspace && (
+            <CampaignsHubView
+              workspace={workspace}
+              initialSection="subscribers"
+              onRequireUpgrade={(key) => setUpgradeLockKey(key)}
+            />
+          )}
+          {route.view === 'campaign-templates' && workspace && (
+            <CampaignsHubView
+              workspace={workspace}
+              initialSection="templates"
+              onRequireUpgrade={(key) => setUpgradeLockKey(key)}
+            />
+          )}
+          {route.view === 'campaign-analytics' && workspace && (
+            <CampaignsHubView
+              workspace={workspace}
+              initialSection="analytics"
+              onRequireUpgrade={(key) => setUpgradeLockKey(key)}
+            />
+          )}
+          {route.view === 'campaign-domains' && workspace && (
+            <CampaignsHubView
+              workspace={workspace}
+              initialSection="settings"
+              onRequireUpgrade={(key) => setUpgradeLockKey(key)}
             />
           )}
           {route.view === 'forms' && (

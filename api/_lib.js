@@ -29,8 +29,18 @@ function applyCors(req, res, allowAnyOrigin = false) {
         .map((v) => String(v || '').trim().replace(/\/+$/, ''))
         .filter(Boolean)
     );
+    const reqHost = String(req.headers['x-forwarded-host'] || req.headers.host || '')
+      .split(',')[0]
+      .trim()
+      .toLowerCase();
+    let isSameHost = false;
+    try {
+      isSameHost = Boolean(reqHost && new URL(origin).host.toLowerCase() === reqHost);
+    } catch {
+      isSameHost = false;
+    }
     const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
-    if (allowed.has(origin) || isLocal) {
+    if (allowed.has(origin) || isLocal || isSameHost) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Vary', 'Origin');
       res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -1858,18 +1868,58 @@ export async function handlePublicNewsletterSubscribe(req, res, explicitListKey)
     res.statusCode = 204;
     return res.end();
   }
-  if (req.method !== 'POST') {
-    return sendJson(res, 405, { ok: false, error: 'Method not allowed. Use POST.' });
-  }
-
-  const listKey = String(explicitListKey || req.query?.listKey || '').trim();
-  if (!/^[a-zA-Z0-9_-]{3,64}$/.test(listKey)) {
-    return sendJson(res, 400, { ok: false, error: 'Invalid newsletter list key.' });
-  }
 
   const accept = String(req.headers.accept || '');
   const contentType = String(req.headers['content-type'] || '');
   const wantsJson = accept.includes('application/json') || contentType.includes('application/json');
+
+  const urlPath = String(req.url || '').split('?')[0];
+  const pathMatch = urlPath.match(/\/api\/newsletter\/([^/]+?)(?:\/subscribe)?\/?$/);
+  const rawCandidate = String(explicitListKey || req.query?.listKey || '').trim();
+  const listKey =
+    rawCandidate && rawCandidate.toLowerCase() !== 'subscribe'
+      ? rawCandidate
+      : String(pathMatch?.[1] || '').trim();
+
+  if (!/^[a-zA-Z0-9_-]{3,64}$/.test(listKey) || listKey.toLowerCase() === 'subscribe') {
+    const msg = 'Invalid newsletter list key.';
+    return wantsJson ? sendJson(res, 400, { ok: false, error: msg }) : sendHtmlPage(res, 400, 'Invalid List', 'Invalid Newsletter Link', msg);
+  }
+
+  // Friendly hosted subscription form when someone opens the subscribe URL directly in a browser (GET)
+  if (req.method === 'GET') {
+    if (wantsJson) {
+      return sendJson(res, 405, { ok: false, error: 'Method not allowed. Use POST.' });
+    }
+    const lookup = await firestoreGetPublicNewsletterList(listKey);
+    if (lookup.status === 'not_found' || lookup.status === 'forbidden' || !lookup.list) {
+      return sendHtmlPage(res, 404, 'Not Found', 'List Unavailable', 'Newsletter list not found or currently paused.');
+    }
+    if (lookup.status !== 'ok') {
+      return sendHtmlPage(res, 502, 'Service Error', 'Temporary Error', lookup.message || 'Unable to verify newsletter list.');
+    }
+    const list = lookup.list;
+    if (list.status !== 'active') {
+      return sendHtmlPage(res, 403, 'Paused', 'Subscriptions Paused', 'This newsletter list is currently paused.');
+    }
+    const formHtml = `<form method="POST" action="/api/newsletter/${encodeURIComponent(listKey)}/subscribe" style="margin-top:18px;display:flex;flex-direction:column;gap:10px;">
+      <input type="text" name="name" placeholder="Your name (optional)" style="padding:10px 12px;border:1px solid #D4D4D4;border-radius:6px;font-size:14px;" />
+      <input type="email" name="email" placeholder="you@company.com" required style="padding:10px 12px;border:1px solid #D4D4D4;border-radius:6px;font-size:14px;" />
+      <button type="submit" style="padding:10px 14px;background:#A90706;color:#FFFFFF;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;">Subscribe</button>
+    </form>`;
+    return sendHtmlPage(
+      res,
+      200,
+      `Subscribe to ${list.name}`,
+      list.name,
+      'Enter your email address below to subscribe to updates.',
+      formHtml
+    );
+  }
+
+  if (req.method !== 'POST') {
+    return sendJson(res, 405, { ok: false, error: 'Method not allowed. Use POST.' });
+  }
 
   let fields = {};
   try {
@@ -1963,7 +2013,9 @@ export async function handlePublicNewsletterSubscribe(req, res, explicitListKey)
 // ---------------- PUBLIC URL SHORTENER REDIRECT API ----------------
 
 export async function handleShortLinkRedirect(req, res, explicitSlug) {
-  const slug = String(explicitSlug || req.query?.slug || '').trim();
+  const urlPath = String(req.url || '').split('?')[0];
+  const pathMatch = urlPath.match(/\/(?:api\/)?r\/([^/]+)\/?$/);
+  const slug = String(explicitSlug || req.query?.slug || pathMatch?.[1] || '').trim();
   if (!/^[a-zA-Z0-9_-]{1,64}$/.test(slug)) {
     return sendHtmlPage(res, 404, 'Link Not Found', 'Short Link Not Found', 'The requested short link does not exist.');
   }
@@ -2084,4 +2136,826 @@ export async function handleRazorpayWebhook(req, res) {
     receivedAt: new Date().toISOString(),
   });
 }
+
+// ============================================================================
+// PHASE 2: WEBSITE COMPONENTS, WIDGETS, SHADOW DOM EMBED & ANALYTICS API
+// ============================================================================
+
+const WIDGET_RATE_BUCKETS = new Map();
+const WIDGET_EVENT_DEDUP = new Map();
+const WIDGET_DAILY_VISITORS = new Map();
+
+function checkWidgetRateLimit(key, maxPerWindow = 180, windowMs = 60000) {
+  const now = Date.now();
+  if (WIDGET_RATE_BUCKETS.size > 5000) {
+    for (const [k, v] of WIDGET_RATE_BUCKETS.entries()) {
+      if (v.resetAt <= now) WIDGET_RATE_BUCKETS.delete(k);
+    }
+  }
+  const cur = WIDGET_RATE_BUCKETS.get(key);
+  if (!cur || cur.resetAt <= now) {
+    WIDGET_RATE_BUCKETS.set(key, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  if (cur.count >= maxPerWindow) return false;
+  cur.count += 1;
+  return true;
+}
+
+function getClientIp(req) {
+  const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return (fwd || String(req.socket?.remoteAddress || 'unknown')).slice(0, 64);
+}
+
+function isWidgetOriginPermitted(originHost, allowedDomains, allowSubdomains, reqHost) {
+  if (!Array.isArray(allowedDomains) || allowedDomains.length === 0) return true;
+  if (!originHost) return true;
+  const normalizedReqHost = String(reqHost || '').split(':')[0].toLowerCase();
+  if (
+    originHost === 'localhost' ||
+    originHost === '127.0.0.1' ||
+    (normalizedReqHost && originHost === normalizedReqHost)
+  ) {
+    return true;
+  }
+  return allowedDomains.some((raw) => {
+    const rule = String(raw || '')
+      .trim()
+      .toLowerCase()
+      .replace(/^https?:\/\//, '')
+      .replace(/\/.*$/, '')
+      .replace(/:\d+$/, '')
+      .replace(/^\*\./, '');
+    if (!rule) return false;
+    if (originHost === rule) return true;
+    return Boolean(allowSubdomains) && originHost.endsWith(`.${rule}`);
+  });
+}
+
+async function firestoreGetPublicWidget(publicId) {
+  const url = `${FIRESTORE_API_BASE}/publicWidgets/${encodeURIComponent(publicId)}`;
+  const resp = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' } });
+  if (resp.status === 404) return { status: 'not_found' };
+  if (resp.status === 403) return { status: 'forbidden' };
+  if (!resp.ok) {
+    const errBody = await resp.json().catch(() => ({}));
+    return { status: 'error', message: errBody?.error?.message || `Firestore error (${resp.status})` };
+  }
+  const docJson = await resp.json().catch(() => null);
+  if (!docJson?.fields) return { status: 'not_found' };
+  return { status: 'ok', widget: fromFirestoreDoc(docJson) };
+}
+
+export async function handlePublicWidgetConfig(req, res, explicitPublicId) {
+  applyCors(req, res, true);
+  if (req.method === 'OPTIONS') {
+    res.statusCode = 204;
+    return res.end();
+  }
+  if (req.method !== 'GET') {
+    return sendJson(res, 405, { ok: false, error: 'Method not allowed. Use GET.' });
+  }
+
+  const ip = getClientIp(req);
+  if (!checkWidgetRateLimit(`wcfg:${ip}`, 240, 60000)) {
+    return sendJson(res, 429, { ok: false, error: 'Rate limit exceeded. Please try again shortly.' });
+  }
+
+  const urlPath = String(req.url || '').split('?')[0];
+  const segments = urlPath.split('/').filter(Boolean);
+  const publicId = String(explicitPublicId || req.query?.publicId || segments[segments.length - 1] || '').trim();
+
+  if (!/^[a-zA-Z0-9_-]{4,64}$/.test(publicId)) {
+    return sendJson(res, 400, { ok: false, error: 'Invalid widget identifier.' });
+  }
+
+  const lookup = await firestoreGetPublicWidget(publicId);
+  if (lookup.status === 'not_found') {
+    return sendJson(res, 404, { ok: false, status: 'not_found', error: 'Widget not found.' });
+  }
+  if (lookup.status === 'forbidden' || !lookup.widget) {
+    return sendJson(res, 403, { ok: false, status: 'disabled', error: 'Widget is not publicly available.' });
+  }
+  if (lookup.status !== 'ok') {
+    return sendJson(res, 502, { ok: false, error: lookup.message || 'Unable to load widget.' });
+  }
+
+  const w = lookup.widget;
+  if (w.status !== 'published') {
+    return sendJson(res, 403, {
+      ok: false,
+      status: w.status === 'disabled' ? 'disabled' : 'draft',
+      error: 'Widget is not published.',
+    });
+  }
+
+  const originHost = extractOriginHostname(req);
+  const reqHost = String(req.headers['x-forwarded-host'] || req.headers.host || '');
+  if (
+    w.domainRestrictionEnabled &&
+    !isWidgetOriginPermitted(originHost, w.allowedDomains, w.allowSubdomains, reqHost)
+  ) {
+    return sendJson(res, 403, {
+      ok: false,
+      status: 'domain_blocked',
+      error: `Domain "${originHost}" is not authorized to load this widget.`,
+    });
+  }
+
+  res.setHeader('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
+  return sendJson(res, 200, {
+    ok: true,
+    widget: {
+      publicId: w.publicId,
+      name: w.name,
+      type: w.type,
+      group: w.group,
+      category: w.category,
+      publishedVersion: Number(w.publishedVersion || 1),
+      configuration: w.configuration || {},
+    },
+  });
+}
+
+const VALID_WIDGET_EVENTS = new Set([
+  'impression',
+  'load',
+  'click',
+  'cta_click',
+  'popup_open',
+  'popup_close',
+  'consent_accept',
+  'consent_reject',
+  'error',
+]);
+
+export async function handleWidgetEventTrack(req, res) {
+  applyCors(req, res, true);
+  if (req.method === 'OPTIONS') {
+    res.statusCode = 204;
+    return res.end();
+  }
+  if (req.method !== 'POST') {
+    return sendJson(res, 405, { ok: false, error: 'Method not allowed. Use POST.' });
+  }
+
+  const ip = getClientIp(req);
+  if (!checkWidgetRateLimit(`wevt:${ip}`, 300, 60000)) {
+    return sendJson(res, 429, { ok: false, error: 'Analytics rate limit exceeded.' });
+  }
+
+  let body = {};
+  try {
+    body = await readBody(req);
+  } catch {
+    return sendJson(res, 400, { ok: false, error: 'Invalid event payload.' });
+  }
+
+  const publicId = String(body?.publicId || '').trim();
+  const eventType = String(body?.eventType || '').trim();
+  const device = ['desktop', 'tablet', 'mobile'].includes(String(body?.device || ''))
+    ? String(body.device)
+    : 'desktop';
+  const visitorHash = String(body?.visitorHash || '').trim().slice(0, 64) || sha256Hex(`${ip}:${new Date().toISOString().slice(0, 10)}`).slice(0, 16);
+
+  if (!/^[a-zA-Z0-9_-]{4,64}$/.test(publicId) || !VALID_WIDGET_EVENTS.has(eventType)) {
+    return sendJson(res, 400, { ok: false, error: 'Invalid widget event parameters.' });
+  }
+
+  // Event deduplication (avoid duplicate impression/load floods within 20s)
+  const now = Date.now();
+  if (WIDGET_EVENT_DEDUP.size > 10000) {
+    for (const [k, exp] of WIDGET_EVENT_DEDUP.entries()) {
+      if (exp <= now) WIDGET_EVENT_DEDUP.delete(k);
+    }
+  }
+  const dedupKey = `${publicId}:${visitorHash}:${eventType}`;
+  if (eventType === 'load' || eventType === 'impression') {
+    const existingExp = WIDGET_EVENT_DEDUP.get(dedupKey);
+    if (existingExp && existingExp > now) {
+      return sendJson(res, 200, { ok: true, deduplicated: true });
+    }
+    WIDGET_EVENT_DEDUP.set(dedupKey, now + 20000);
+  }
+
+  const lookup = await firestoreGetPublicWidget(publicId);
+  if (lookup.status !== 'ok' || !lookup.widget || lookup.widget.status !== 'published') {
+    return sendJson(res, 404, { ok: false, error: 'Published widget not found.' });
+  }
+
+  const w = lookup.widget;
+  const dateKey = new Date().toISOString().slice(0, 10);
+  const compactDate = dateKey.replace(/-/g, '');
+  const statDocId = `wstat_${publicId}_${compactDate}`;
+
+  // Privacy-safe unique visitor check for today
+  const dayVisitorKey = `${publicId}:${dateKey}:${visitorHash}`;
+  let isNewUnique = false;
+  if (WIDGET_DAILY_VISITORS.size > 20000) WIDGET_DAILY_VISITORS.clear();
+  if (!WIDGET_DAILY_VISITORS.has(dayVisitorKey)) {
+    WIDGET_DAILY_VISITORS.set(dayVisitorKey, now);
+    isNewUnique = true;
+  }
+
+  const inc = {
+    impressions: eventType === 'impression' ? 1 : 0,
+    loads: eventType === 'load' ? 1 : 0,
+    uniqueVisitors: isNewUnique ? 1 : 0,
+    clicks: eventType === 'click' ? 1 : 0,
+    ctaClicks: eventType === 'cta_click' ? 1 : 0,
+    popupOpens: eventType === 'popup_open' ? 1 : 0,
+    popupCloses: eventType === 'popup_close' ? 1 : 0,
+    consentAccepts: eventType === 'consent_accept' ? 1 : 0,
+    consentRejects: eventType === 'consent_reject' ? 1 : 0,
+    errors: eventType === 'error' ? 1 : 0,
+    desktopCount: device === 'desktop' ? 1 : 0,
+    tabletCount: device === 'tablet' ? 1 : 0,
+    mobileCount: device === 'mobile' ? 1 : 0,
+  };
+
+  // 1. Try creating today's daily stat doc; if it already exists, apply atomic +1 increments
+  const createFields = {
+    publicId: toFirestoreValue(publicId),
+    widgetId: toFirestoreValue(Number(w.widgetId || 0)),
+    ownerUid: toFirestoreValue(String(w.ownerUid || '')),
+    dateKey: toFirestoreValue(dateKey),
+    impressions: toFirestoreValue(inc.impressions),
+    loads: toFirestoreValue(inc.loads),
+    uniqueVisitors: toFirestoreValue(inc.uniqueVisitors),
+    clicks: toFirestoreValue(inc.clicks),
+    ctaClicks: toFirestoreValue(inc.ctaClicks),
+    popupOpens: toFirestoreValue(inc.popupOpens),
+    popupCloses: toFirestoreValue(inc.popupCloses),
+    consentAccepts: toFirestoreValue(inc.consentAccepts),
+    consentRejects: toFirestoreValue(inc.consentRejects),
+    errors: toFirestoreValue(inc.errors),
+    desktopCount: toFirestoreValue(inc.desktopCount),
+    tabletCount: toFirestoreValue(inc.tabletCount),
+    mobileCount: toFirestoreValue(inc.mobileCount),
+  };
+
+  try {
+    const createResp = await fetch(`${FIRESTORE_API_BASE}:commit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        writes: [
+          {
+            update: {
+              name: `${FIRESTORE_DOC_ROOT}/widgetDailyStats/${statDocId}`,
+              fields: createFields,
+            },
+            currentDocument: { exists: false },
+            updateTransforms: [{ fieldPath: 'updatedAt', setToServerValue: 'REQUEST_TIME' }],
+          },
+        ],
+      }),
+    });
+
+    if (!createResp.ok) {
+      // Document already exists -> apply atomic +1 field transforms
+      const fieldTransforms = [{ fieldPath: 'updatedAt', setToServerValue: 'REQUEST_TIME' }];
+      for (const [k, delta] of Object.entries(inc)) {
+        if (delta > 0) {
+          fieldTransforms.push({ fieldPath: k, increment: { integerValue: String(delta) } });
+        }
+      }
+      await fetch(`${FIRESTORE_API_BASE}:commit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          writes: [
+            {
+              transform: {
+                document: `${FIRESTORE_DOC_ROOT}/widgetDailyStats/${statDocId}`,
+                fieldTransforms,
+              },
+            },
+          ],
+        }),
+      });
+    }
+
+    // 2. Update publicWidgets summary counters (bounded +1 per firestore.rules)
+    const addView = eventType === 'impression' || eventType === 'load' ? 1 : 0;
+    const addClick = eventType === 'click' || eventType === 'cta_click' ? 1 : 0;
+    const pubFields = {
+      lastLoadedAt: toFirestoreValue(new Date().toISOString()),
+    };
+    const pubMask = ['lastLoadedAt'];
+    if (addView > 0) {
+      pubFields.totalViews = toFirestoreValue(Number(w.totalViews || 0) + 1);
+      pubMask.push('totalViews');
+    }
+    if (addClick > 0) {
+      pubFields.totalClicks = toFirestoreValue(Number(w.totalClicks || 0) + 1);
+      pubMask.push('totalClicks');
+    }
+
+    await fetch(`${FIRESTORE_API_BASE}:commit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        writes: [
+          {
+            update: {
+              name: `${FIRESTORE_DOC_ROOT}/publicWidgets/${publicId}`,
+              fields: pubFields,
+            },
+            updateMask: { fieldPaths: pubMask },
+            updateTransforms: [{ fieldPath: 'updatedAt', setToServerValue: 'REQUEST_TIME' }],
+          },
+        ],
+      }),
+    });
+  } catch {
+    // Non-blocking analytics persistence
+  }
+
+  return sendJson(res, 200, { ok: true, recorded: true });
+}
+
+export async function handleWidgetEmbedLoaderJs(req, res) {
+  applyCors(req, res, true);
+  if (req.method === 'OPTIONS') {
+    res.statusCode = 204;
+    return res.end();
+  }
+
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || 'widgets.brosdev.site');
+  const proto = String(
+    req.headers['x-forwarded-proto'] ||
+      (host.startsWith('localhost') || host.startsWith('127.0.0.1') ? 'http' : 'https')
+  );
+  const baseUrl = String(process.env.APP_URL || `${proto}://${host}`).replace(/\/+$/, '');
+
+  res.statusCode = 200;
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=60');
+  res.end(`(function(){
+  if (window.__BROSDEV_WIDGETS_LOADER__) {
+    try { window.__BROSDEV_WIDGETS_LOADER__.scan(); } catch(e) {}
+    return;
+  }
+
+  var API_BASE = ${JSON.stringify(baseUrl)};
+  var MOUNTED = {};
+
+  function detectDevice() {
+    var w = window.innerWidth || 1280;
+    if (w < 640) return 'mobile';
+    if (w < 1024) return 'tablet';
+    return 'desktop';
+  }
+
+  function safeUrl(raw, fallback) {
+    var s = String(raw || '').trim();
+    if (!s) return fallback || '#';
+    if (/^(https?:|mailto:|tel:|\\/|#)/i.test(s) && !/^javascript:/i.test(s)) return s;
+    return fallback || '#';
+  }
+
+  function sanitizeCss(raw) {
+    var css = String(raw || '').trim();
+    if (!css || css.length > 8000) return '';
+    if (/@import|expression\\s*\\(|javascript:|behavior\\s*:|<\\/?script|<\\/style/i.test(css)) return '';
+    return css;
+  }
+
+  function getVisitorHash() {
+    try {
+      var k = 'bd_w_v_' + new Date().toISOString().slice(0,10);
+      var v = sessionStorage.getItem(k);
+      if (!v) {
+        v = 'v_' + Math.random().toString(36).slice(2, 12);
+        sessionStorage.setItem(k, v);
+      }
+      return v;
+    } catch(e) {
+      return 'v_anon';
+    }
+  }
+
+  function track(publicId, eventType) {
+    try {
+      fetch(API_BASE + '/api/widgets/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
+        body: JSON.stringify({
+          publicId: publicId,
+          eventType: eventType,
+          device: detectDevice(),
+          visitorHash: getVisitorHash()
+        })
+      }).catch(function(){});
+    } catch(e) {}
+  }
+
+  function checkVisibilityRules(publicId, vis) {
+    if (!vis) return true;
+    var dev = detectDevice();
+    if (dev === 'desktop' && vis.showOnDesktop === false) return false;
+    if (dev === 'tablet' && vis.showOnTablet === false) return false;
+    if (dev === 'mobile' && vis.showOnMobile === false) return false;
+
+    var today = new Date().toISOString().slice(0, 10);
+    if (vis.startDate && today < vis.startDate) return false;
+    if (vis.endDate && today > vis.endDate) return false;
+
+    var freq = vis.displayFrequency || 'always';
+    try {
+      if (freq === 'once_per_session' && sessionStorage.getItem('bd_seen_' + publicId)) return false;
+      if (freq === 'once_per_day' && localStorage.getItem('bd_seen_day_' + publicId) === today) return false;
+      if (freq === 'once_ever' && localStorage.getItem('bd_seen_ever_' + publicId)) return false;
+    } catch(e) {}
+    return true;
+  }
+
+  function markShown(publicId, vis) {
+    var freq = (vis && vis.displayFrequency) || 'always';
+    var today = new Date().toISOString().slice(0, 10);
+    try {
+      if (freq === 'once_per_session') sessionStorage.setItem('bd_seen_' + publicId, '1');
+      if (freq === 'once_per_day') localStorage.setItem('bd_seen_day_' + publicId, today);
+      if (freq === 'once_ever') localStorage.setItem('bd_seen_ever_' + publicId, '1');
+    } catch(e) {}
+  }
+
+  function el(tag, text, styles) {
+    var node = document.createElement(tag);
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    if (styles) {
+      for (var k in styles) {
+        if (Object.prototype.hasOwnProperty.call(styles, k)) node.style[k] = styles[k];
+      }
+    }
+    return node;
+  }
+
+  function renderWidgetContent(type, cfg, publicId, onClose) {
+    var c = (cfg && cfg.content) || {};
+    var s = (cfg && cfg.style) || {};
+    var accent = s.accentColor || '#A90706';
+    var btnText = s.buttonTextColor || '#FFFFFF';
+    var border = s.borderColor || '#E5E5E5';
+    var root = el('div');
+
+    function makeCta(label, url, evType) {
+      var a = el('a', label || 'Learn More', {
+        display: 'inline-block',
+        background: accent,
+        color: btnText,
+        padding: '8px 14px',
+        borderRadius: '6px',
+        fontSize: '12px',
+        fontWeight: '600',
+        textDecoration: 'none',
+        cursor: 'pointer'
+      });
+      a.href = safeUrl(url, '#');
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.addEventListener('click', function() { track(publicId, evType || 'cta_click'); });
+      return a;
+    }
+
+    if (type === 'announcement_bar' || type === 'sticky_cta') {
+      var row = el('div', null, { display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '10px' });
+      var left = el('div');
+      left.appendChild(el('strong', c.title || c.headline || 'Announcement', { marginRight: '8px' }));
+      if (c.description || c.subtext) left.appendChild(el('span', c.description || c.subtext, { opacity: '0.88' }));
+      row.appendChild(left);
+      var right = el('div', null, { display: 'flex', alignItems: 'center', gap: '8px' });
+      if (c.ctaLabel) right.appendChild(makeCta(c.ctaLabel, c.ctaUrl, 'cta_click'));
+      if (cfg.visibility && cfg.visibility.dismissible) {
+        var xBtn = el('button', '×', { background: 'transparent', border: 'none', color: 'inherit', fontSize: '18px', cursor: 'pointer' });
+        xBtn.type = 'button';
+        xBtn.addEventListener('click', function() { track(publicId, 'popup_close'); onClose(); });
+        right.appendChild(xBtn);
+      }
+      row.appendChild(right);
+      root.appendChild(row);
+      return root;
+    }
+
+    if (type === 'cookie_consent') {
+      var wrap = el('div', null, { display: 'grid', gap: '10px' });
+      wrap.appendChild(el('div', c.bannerText || 'We use cookies to improve your experience.', { lineHeight: '1.5' }));
+      var actions = el('div', null, { display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' });
+      var acc = el('button', c.acceptLabel || 'Accept All', { background: accent, color: btnText, border: 'none', borderRadius: '6px', padding: '7px 12px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' });
+      acc.addEventListener('click', function() {
+        try { localStorage.setItem('bd_cookie_' + publicId, 'accepted'); } catch(e) {}
+        track(publicId, 'consent_accept');
+        onClose();
+      });
+      var rej = el('button', c.rejectLabel || 'Reject Non-Essential', { background: 'transparent', color: 'inherit', border: '1px solid ' + border, borderRadius: '6px', padding: '7px 12px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' });
+      rej.addEventListener('click', function() {
+        try { localStorage.setItem('bd_cookie_' + publicId, 'rejected'); } catch(e) {}
+        track(publicId, 'consent_reject');
+        onClose();
+      });
+      actions.appendChild(acc);
+      actions.appendChild(rej);
+      if (c.policyUrl) {
+        var pol = el('a', 'Privacy Policy', { fontSize: '11px', color: 'inherit', textDecoration: 'underline', marginLeft: '6px' });
+        pol.href = safeUrl(c.policyUrl, '/privacy');
+        pol.target = '_blank';
+        pol.rel = 'noopener noreferrer';
+        actions.appendChild(pol);
+      }
+      wrap.appendChild(actions);
+      root.appendChild(wrap);
+      return root;
+    }
+
+    if (type === 'reading_progress') {
+      var trackEl = el('div', null, { width: '100%', height: (c.heightPx || 4) + 'px', background: 'rgba(0,0,0,0.08)', borderRadius: '999px', overflow: 'hidden' });
+      var bar = el('div', null, { height: '100%', width: '0%', background: accent, transition: 'width 120ms ease' });
+      trackEl.appendChild(bar);
+      root.appendChild(trackEl);
+      var updateBar = function() {
+        var docH = document.documentElement.scrollHeight - window.innerHeight;
+        var pct = docH > 0 ? Math.min(100, Math.max(0, (window.scrollY / docH) * 100)) : 0;
+        bar.style.width = pct.toFixed(1) + '%';
+      };
+      window.addEventListener('scroll', updateBar, { passive: true });
+      updateBar();
+      return root;
+    }
+
+    if (type === 'back_to_top') {
+      var topBtn = el('button', '↑ ' + (c.label || 'Top'), {
+        background: accent, color: btnText, border: 'none', borderRadius: '999px', padding: '9px 14px', fontSize: '12px', fontWeight: '600', cursor: 'pointer'
+      });
+      topBtn.addEventListener('click', function() {
+        track(publicId, 'click');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+      root.appendChild(topBtn);
+      return root;
+    }
+
+    if (type === 'whatsapp_chat') {
+      var phone = String(c.phoneNumber || '').replace(/[^0-9]/g, '');
+      var waUrl = 'https://wa.me/' + phone + '?text=' + encodeURIComponent(String(c.prefillMessage || 'Hello!'));
+      var box = el('div', null, { display: 'grid', gap: '8px' });
+      box.appendChild(el('div', c.agentName || 'Support Team', { fontWeight: '700', fontSize: '14px' }));
+      box.appendChild(el('div', c.welcomeMessage || 'Chat with us on WhatsApp!', { fontSize: '12px', opacity: '0.85' }));
+      box.appendChild(makeCta(c.buttonLabel || 'Chat on WhatsApp', waUrl, 'cta_click'));
+      root.appendChild(box);
+      return root;
+    }
+
+    if (type === 'faq_accordion' && Array.isArray(c.items)) {
+      var faqWrap = el('div', null, { display: 'grid', gap: '8px' });
+      if (c.heading) faqWrap.appendChild(el('h3', c.heading, { margin: '0 0 6px', fontSize: '16px', fontWeight: '700' }));
+      c.items.forEach(function(item) {
+        var card = el('div', null, { border: '1px solid ' + border, borderRadius: '6px', overflow: 'hidden' });
+        var qBtn = el('button', item.question || 'Question', { width: '100%', textAlign: 'left', background: 'transparent', border: 'none', padding: '10px 12px', fontWeight: '600', fontSize: '13px', color: 'inherit', cursor: 'pointer' });
+        var ans = el('div', item.answer || '', { display: 'none', padding: '0 12px 10px', fontSize: '12px', opacity: '0.85', lineHeight: '1.5' });
+        qBtn.addEventListener('click', function() {
+          ans.style.display = ans.style.display === 'none' ? 'block' : 'none';
+          track(publicId, 'click');
+        });
+        card.appendChild(qBtn);
+        card.appendChild(ans);
+        faqWrap.appendChild(card);
+      });
+      root.appendChild(faqWrap);
+      return root;
+    }
+
+    if (type === 'countdown_timer') {
+      var cdWrap = el('div', null, { display: 'grid', gap: '10px', textAlign: 'center' });
+      if (c.heading) cdWrap.appendChild(el('div', c.heading, { fontWeight: '700', fontSize: '15px' }));
+      var clock = el('div', '00d : 00h : 00m : 00s', { fontFamily: 'monospace', fontSize: '20px', fontWeight: '700' });
+      cdWrap.appendChild(clock);
+      if (c.ctaLabel) cdWrap.appendChild(makeCta(c.ctaLabel, c.ctaUrl, 'cta_click'));
+      var targetTs = new Date(c.targetIsoDate || Date.now() + 86400000).getTime();
+      var tick = function() {
+        var diff = Math.max(0, targetTs - Date.now());
+        var d = Math.floor(diff / 86400000);
+        var h = Math.floor((diff % 86400000) / 3600000);
+        var m = Math.floor((diff % 3600000) / 60000);
+        var sec = Math.floor((diff % 60000) / 1000);
+        clock.textContent = d + 'd : ' + String(h).padStart(2,'0') + 'h : ' + String(m).padStart(2,'0') + 'm : ' + String(sec).padStart(2,'0') + 's';
+      };
+      tick();
+      setInterval(tick, 1000);
+      root.appendChild(cdWrap);
+      return root;
+    }
+
+    if (type === 'newsletter_popup' || type === 'contact_widget' || type === 'lead_capture_popup') {
+      var formBox = el('form', null, { display: 'grid', gap: '8px' });
+      formBox.appendChild(el('div', c.title || c.heading || 'Get in Touch', { fontWeight: '700', fontSize: '16px' }));
+      if (c.description || c.subtitle) formBox.appendChild(el('div', c.description || c.subtitle, { fontSize: '12px', opacity: '0.85' }));
+      if (type !== 'newsletter_popup') {
+        var nameIn = el('input', null, { padding: '8px 10px', border: '1px solid ' + border, borderRadius: '6px', fontSize: '12px' });
+        nameIn.name = 'name';
+        nameIn.placeholder = 'Your name';
+        nameIn.required = true;
+        formBox.appendChild(nameIn);
+      }
+      var emailIn = el('input', null, { padding: '8px 10px', border: '1px solid ' + border, borderRadius: '6px', fontSize: '12px' });
+      emailIn.type = 'email';
+      emailIn.name = 'email';
+      emailIn.placeholder = c.placeholder || 'you@company.com';
+      emailIn.required = true;
+      formBox.appendChild(emailIn);
+      if (type === 'contact_widget') {
+        var msgIn = el('textarea', null, { padding: '8px 10px', border: '1px solid ' + border, borderRadius: '6px', fontSize: '12px' });
+        msgIn.name = 'message';
+        msgIn.rows = 3;
+        msgIn.placeholder = 'How can we help?';
+        msgIn.required = true;
+        formBox.appendChild(msgIn);
+      }
+      var subBtn = el('button', c.buttonLabel || c.ctaLabel || 'Submit', {
+        background: accent, color: btnText, border: 'none', borderRadius: '6px', padding: '9px 14px', fontSize: '12px', fontWeight: '600', cursor: 'pointer'
+      });
+      subBtn.type = 'submit';
+      formBox.appendChild(subBtn);
+      var msgOut = el('div', '', { fontSize: '12px', minHeight: '16px' });
+      formBox.appendChild(msgOut);
+      formBox.addEventListener('submit', function(e) {
+        e.preventDefault();
+        track(publicId, 'cta_click');
+        var endpoint = safeUrl(c.endpointUrl || c.formEndpoint || '', '');
+        if (endpoint && /^https?:\\/\\//i.test(endpoint)) {
+          var payload = {};
+          new FormData(formBox).forEach(function(v, k) { payload[k] = v; });
+          fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify(payload) })
+            .then(function() { msgOut.textContent = c.successMessage || 'Submitted successfully!'; formBox.reset(); })
+            .catch(function() { msgOut.textContent = 'Network error. Please retry.'; track(publicId, 'error'); });
+        } else {
+          msgOut.textContent = c.successMessage || 'Thank you! We received your details.';
+          formBox.reset();
+        }
+      });
+      root.appendChild(formBox);
+      return root;
+    }
+
+    // Generic structured card fallback for remaining rich components (pricing, reviews, popup, exit intent, business card, hours, etc.)
+    var cardBox = el('div', null, { display: 'grid', gap: '8px' });
+    var headRow = el('div', null, { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' });
+    headRow.appendChild(el('div', c.title || c.heading || c.fullName || c.businessName || 'BrosDev Component', { fontWeight: '700', fontSize: '15px' }));
+    if (cfg.visibility && cfg.visibility.dismissible) {
+      var closeX = el('button', '×', { background: 'transparent', border: 'none', color: 'inherit', fontSize: '18px', cursor: 'pointer' });
+      closeX.addEventListener('click', function() { track(publicId, 'popup_close'); onClose(); });
+      headRow.appendChild(closeX);
+    }
+    cardBox.appendChild(headRow);
+    if (c.description || c.content || c.bio || c.message || c.subtext || c.role) {
+      cardBox.appendChild(el('div', c.description || c.content || c.bio || c.message || c.subtext || c.role, { fontSize: '13px', opacity: '0.88', lineHeight: '1.5' }));
+    }
+    if (c.ctaLabel || c.buttonLabel) {
+      cardBox.appendChild(makeCta(c.ctaLabel || c.buttonLabel, c.ctaUrl || c.bookingUrl || c.website || '#', 'cta_click'));
+    }
+    root.appendChild(cardBox);
+    return root;
+  }
+
+  function mountWidget(publicId, inlineTarget) {
+    if (!publicId) return;
+    var mountKey = publicId + ':' + (inlineTarget ? (inlineTarget.id || 'inline') : 'auto');
+    if (MOUNTED[mountKey]) return;
+    MOUNTED[mountKey] = true;
+
+    fetch(API_BASE + '/api/widgets/public/' + encodeURIComponent(publicId))
+      .then(function(r) { return r.json(); })
+      .then(function(res) {
+        if (!res || !res.ok || !res.widget) return;
+        var w = res.widget;
+        var cfg = w.configuration || {};
+        var vis = cfg.visibility || {};
+        var style = cfg.style || {};
+
+        if (!checkVisibilityRules(publicId, vis)) return;
+
+        var renderNow = function() {
+          var host = document.createElement('div');
+          host.setAttribute('data-brosdev-mounted', publicId);
+
+          var pos = inlineTarget ? 'inline' : (style.position || 'inline');
+          if (pos === 'top' || pos === 'bottom') {
+            host.style.position = 'fixed';
+            host.style.left = '0';
+            host.style.right = '0';
+            host.style[pos] = '0';
+            host.style.zIndex = '2147483000';
+          } else if (pos === 'bottom-right' || pos === 'bottom-left' || pos === 'top-right' || pos === 'top-left') {
+            host.style.position = 'fixed';
+            host.style.zIndex = '2147483000';
+            host.style[pos.indexOf('bottom') === 0 ? 'bottom' : 'top'] = '20px';
+            host.style[pos.indexOf('right') > -1 ? 'right' : 'left'] = '20px';
+            host.style.maxWidth = (style.maxWidthPx || 380) + 'px';
+            host.style.width = 'calc(100vw - 32px)';
+          } else if (pos === 'center') {
+            host.style.position = 'fixed';
+            host.style.inset = '0';
+            host.style.zIndex = '2147483000';
+            host.style.display = 'flex';
+            host.style.alignItems = 'center';
+            host.style.justifyContent = 'center';
+            host.style.padding = '16px';
+            host.style.background = 'rgba(0,0,0,' + (style.overlayOpacity || 0.45) + ')';
+          }
+
+          var shadow = host.attachShadow({ mode: 'open' });
+          var baseCss = ':host { all: initial; display: block; font-family: ' + (style.fontFamily || 'Inter, system-ui, sans-serif') + '; } ' +
+            '.bd-widget-card { box-sizing: border-box; width: 100%; max-width: ' + (style.maxWidthPx || 720) + 'px; margin: 0 auto; ' +
+            'background: ' + (style.backgroundColor || '#FFFFFF') + '; color: ' + (style.textColor || '#111111') + '; ' +
+            'border: 1px solid ' + (style.borderColor || '#E5E5E5') + '; border-radius: ' + (style.borderRadiusPx || 8) + 'px; ' +
+            'padding: ' + (style.paddingPx || 16) + 'px; font-size: ' + (style.fontSizePx || 14) + 'px; ' +
+            'box-shadow: 0 10px 28px rgba(0,0,0,0.12); }';
+
+          var styleTag = document.createElement('style');
+          styleTag.textContent = baseCss + '\\n' + sanitizeCss(cfg.customCss || '');
+          shadow.appendChild(styleTag);
+
+          var card = document.createElement('div');
+          card.className = 'bd-widget-card';
+          var body = renderWidgetContent(w.type, cfg, publicId, function() {
+            if (host.parentNode) host.parentNode.removeChild(host);
+          });
+          card.appendChild(body);
+
+          if (cfg.showBranding !== false) {
+            var brand = el('div', 'Powered by BrosDev Widgets', {
+              marginTop: '10px', paddingTop: '6px', borderTop: '1px solid ' + (style.borderColor || '#E5E5E5'),
+              fontSize: '10px', opacity: '0.6', textAlign: 'right'
+            });
+            card.appendChild(brand);
+          }
+          shadow.appendChild(card);
+
+          if (inlineTarget) {
+            inlineTarget.appendChild(host);
+          } else if (pos === 'top' && document.body.firstChild) {
+            document.body.insertBefore(host, document.body.firstChild);
+          } else {
+            document.body.appendChild(host);
+          }
+
+          markShown(publicId, vis);
+          track(publicId, 'load');
+          track(publicId, 'impression');
+          if (pos === 'center') track(publicId, 'popup_open');
+        };
+
+        var triggered = false;
+        var fireOnce = function() {
+          if (triggered) return;
+          triggered = true;
+          renderNow();
+        };
+
+        if (vis.exitIntent) {
+          document.addEventListener('mouseleave', function(ev) {
+            if (ev.clientY <= 4) fireOnce();
+          });
+        } else if (Number(vis.scrollTriggerPct || 0) > 0) {
+          window.addEventListener('scroll', function() {
+            var docH = document.documentElement.scrollHeight - window.innerHeight;
+            var pct = docH > 0 ? (window.scrollY / docH) * 100 : 100;
+            if (pct >= Number(vis.scrollTriggerPct)) fireOnce();
+          }, { passive: true });
+        } else if (Number(vis.triggerDelaySec || 0) > 0) {
+          setTimeout(fireOnce, Number(vis.triggerDelaySec) * 1000);
+        } else {
+          fireOnce();
+        }
+      })
+      .catch(function() {
+        track(publicId, 'error');
+      });
+  }
+
+  function scan() {
+    var divs = document.querySelectorAll('[data-brosdev-widget]');
+    for (var i = 0; i < divs.length; i++) {
+      var id = divs[i].getAttribute('data-brosdev-widget');
+      if (id) mountWidget(id, divs[i]);
+    }
+    var scripts = document.querySelectorAll('script[data-widget-id]');
+    for (var j = 0; j < scripts.length; j++) {
+      var wid = scripts[j].getAttribute('data-widget-id');
+      if (wid && !document.querySelector('[data-brosdev-widget="' + wid + '"]')) {
+        mountWidget(wid, null);
+      }
+    }
+  }
+
+  window.__BROSDEV_WIDGETS_LOADER__ = { scan: scan };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', scan);
+  } else {
+    scan();
+  }
+})();`);
+}
+
 

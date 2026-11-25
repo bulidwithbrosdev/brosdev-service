@@ -19,7 +19,16 @@ export type PlanLockKey =
   | 'newsletterExport'
   | 'shortLinksLimit'
   | 'customShortSlugs'
-  | 'pdfGenerator';
+  | 'pdfGenerator'
+  | 'widgetsLimit'
+  | 'widgetCustomCss'
+  | 'widgetDomainRestrictions'
+  | 'campaignQuotaLimit'
+  | 'campaignCustomTemplates'
+  | 'campaignScheduling'
+  | 'campaignSegmentation'
+  | 'campaignAutomation'
+  | 'multipleSenderIdentities';
 
 export const BUSINESS_TEAM_SEATS = 15;
 
@@ -403,7 +412,7 @@ export const PLAN_LOCK_CATALOG: Record<PlanLockKey, PlanLockDescriptor> = {
     requiredPriceLabel: '$129/mo',
     freeSummary: 'Free, Starter, and Professional plans are single-owner workspaces.',
     description:
-      'Invite up to 15 teammates with granular Admin, Editor, and Viewer roles to manage forms, webhooks, newsletters, projects, and submissions inside your shared workspace.',
+      'Invite up to 15 teammates with granular Admin, Editor, and Viewer roles to manage forms, widgets, webhooks, newsletters, projects, and submissions inside your shared workspace.',
     currentPlanLimits: [
       'Single account owner only (1 seat)',
       'No role-based team invitations or shared access controls',
@@ -411,7 +420,179 @@ export const PLAN_LOCK_CATALOG: Record<PlanLockKey, PlanLockDescriptor> = {
     unlockedBenefits: [
       'Up to 15 team seats with Admin, Editor, and Viewer roles',
       'Direct email invitations sent from your dedicated {Account ID}-forms address',
-      '50 projects, 200 forms, 50 webhooks, 100 API keys & 50,000 monthly submissions',
+      '50 projects, 200 forms, 200 published widgets, 50 webhooks & 100 API keys',
+    ],
+  },
+  widgetsLimit: {
+    key: 'widgetsLimit',
+    title: 'Published Widget Quota Reached',
+    requiredPlan: 'Starter',
+    requiredPlanSlug: 'starter',
+    requiredPriceLabel: '$19/mo',
+    freeSummary: 'Free includes up to 2 published website widgets with BrosDev attribution.',
+    description:
+      'Publish more live website components and business widgets across your client sites by upgrading your BrosDev plan.',
+    currentPlanLimits: [
+      'Up to 2 published widgets on Free',
+      'BrosDev attribution shown on embeds & hosted pages',
+    ],
+    unlockedBenefits: [
+      '10 published widgets on Starter (50 on Professional, 200 on Business, 500 on Agency)',
+      'Custom CSS styling, white-label branding removal, and domain access controls on Pro+',
+      'Privacy-conscious views, clicks, conversion & device analytics',
+    ],
+  },
+  widgetCustomCss: {
+    key: 'widgetCustomCss',
+    title: 'Scoped Custom CSS Editor',
+    requiredPlan: 'Professional',
+    requiredPlanSlug: 'professional',
+    requiredPriceLabel: '$49/mo',
+    freeSummary: 'Visual color, spacing, typography, and layout controls are included on all plans; Custom CSS requires Professional+.',
+    description:
+      'Write validated, Shadow-DOM-scoped CSS overrides directly in the Widget Builder to match any brand design system without affecting host pages.',
+    currentPlanLimits: [
+      'Built-in visual design controls only',
+      'Custom CSS editor locked',
+    ],
+    unlockedBenefits: [
+      'Live validated Custom CSS editor with automatic selector scoping',
+      '50 published widgets & remove BrosDev branding',
+      'Domain allowlist restrictions & advanced widget analytics',
+    ],
+  },
+  widgetDomainRestrictions: {
+    key: 'widgetDomainRestrictions',
+    title: 'Widget Domain Allowlists & Access Control',
+    requiredPlan: 'Professional',
+    requiredPlanSlug: 'professional',
+    requiredPriceLabel: '$49/mo',
+    freeSummary: 'Free and Starter published widgets load on any domain; restricting embed access by verified domain requires Professional+.',
+    description:
+      'Lock published widgets to specific permitted domains and subdomains with DNS verification tokens and request origin validation to prevent unauthorized reuse.',
+    currentPlanLimits: [
+      'Unrestricted public embed origin',
+      'No per-widget domain allowlist enforcement',
+    ],
+    unlockedBenefits: [
+      'Per-widget allowed domain lists & wildcard subdomain toggles',
+      'DNS TXT verification tokens & last-load monitoring',
+      'Origin/Referer validation & white-label embeds',
+    ],
+  },
+  campaignQuotaLimit: {
+    key: 'campaignQuotaLimit',
+    title: 'Monthly Campaign Email Quota Reached',
+    requiredPlan: 'Starter',
+    requiredPlanSlug: 'starter',
+    requiredPriceLabel: '$19/mo',
+    freeSummary: 'Free includes 1 list, 500 subscribers, and 500 campaign emails per month.',
+    description:
+      'You have reached your monthly campaign email limit or audience list/subscriber cap. Upgrade to send larger newsletters, product announcements, and automated sequences.',
+    currentPlanLimits: [
+      'Up to 500 campaign emails/month on Free',
+      '1 audience list & 500 subscribers',
+      'BrosDev footer attribution on emails',
+    ],
+    unlockedBenefits: [
+      '5,000/mo on Starter, 25,000/mo on Pro, 100,000/mo on Business',
+      'Up to 50 audience lists & 50,000+ subscribers',
+      'Custom templates, scheduling, dynamic segments & automations',
+    ],
+  },
+  campaignCustomTemplates: {
+    key: 'campaignCustomTemplates',
+    title: 'Custom Reusable Email Templates',
+    requiredPlan: 'Starter',
+    requiredPlanSlug: 'starter',
+    requiredPriceLabel: '$19/mo',
+    freeSummary: 'Free includes starter email templates; saving custom reusable campaign templates requires Starter or higher.',
+    description:
+      'Save your branded newsletter, launch announcement, and digest layouts as reusable templates across all future campaigns.',
+    currentPlanLimits: [
+      'Built-in starter templates only on Free',
+      'Custom saved template library locked',
+    ],
+    unlockedBenefits: [
+      'Save & duplicate unlimited custom email templates',
+      '5 audience lists, 2,500 subscribers & 5,000 campaign emails/month',
+      'Full Resend delivery & engagement analytics',
+    ],
+  },
+  campaignScheduling: {
+    key: 'campaignScheduling',
+    title: 'Campaign Scheduling & Timezone Delivery',
+    requiredPlan: 'Professional',
+    requiredPlanSlug: 'professional',
+    requiredPriceLabel: '$49/mo',
+    freeSummary: 'Free and Starter support immediate campaign dispatch; scheduling future sends requires Professional or higher.',
+    description:
+      'Schedule newsletters and product announcements for exact future dates and timezones with durable Firestore jobs, pause/cancel controls, and automatic Vercel Cron dispatch.',
+    currentPlanLimits: [
+      'Immediate send only on Free & Starter',
+      'Timezone scheduling & queued job controls locked',
+    ],
+    unlockedBenefits: [
+      'Schedule campaigns with timezone support & safe pause/cancel',
+      '25,000 campaign emails/month, 20 lists & 10,000 subscribers',
+      'Dynamic audience segmentation & multi-step automations included',
+    ],
+  },
+  campaignSegmentation: {
+    key: 'campaignSegmentation',
+    title: 'Dynamic Audience Segmentation',
+    requiredPlan: 'Professional',
+    requiredPlanSlug: 'professional',
+    requiredPriceLabel: '$49/mo',
+    freeSummary: 'Target full lists on Free and Starter; reusable rule-based audience segments require Professional or higher.',
+    description:
+      'Build reusable subscriber segments filtered by list membership, tags, signup source, status, or custom fields so every announcement reaches the exact right audience.',
+    currentPlanLimits: [
+      'List-level targeting only',
+      'Reusable multi-rule segments locked',
+    ],
+    unlockedBenefits: [
+      'Unlimited dynamic audience segments with live recipient preview',
+      'Tag, source, status, and custom field filter rules (AND / OR)',
+      'Campaign scheduling, automations, and white-label emails included',
+    ],
+  },
+  campaignAutomation: {
+    key: 'campaignAutomation',
+    title: 'Automated Email Sequences',
+    requiredPlan: 'Professional',
+    requiredPlanSlug: 'professional',
+    requiredPriceLabel: '$49/mo',
+    freeSummary: 'Automated welcome emails, confirmation workflows, and multi-step follow-up sequences require Professional or higher.',
+    description:
+      'Trigger automatic welcome sequences, product onboarding drips, and tag updates whenever new subscribers join or confirm, backed by durable scheduled jobs.',
+    currentPlanLimits: [
+      'Manual newsletter & announcement sends only',
+      'Multi-step delayed sequences locked',
+    ],
+    unlockedBenefits: [
+      'Event-driven triggers (New Subscriber, Confirmed, Added to List, Launch)',
+      'Multi-step email sequences with configurable delays',
+      'Automatic suppression & consent verification before every send',
+    ],
+  },
+  multipleSenderIdentities: {
+    key: 'multipleSenderIdentities',
+    title: 'Multiple Sender Identities & Domains',
+    requiredPlan: 'Business',
+    requiredPlanSlug: 'business',
+    requiredPriceLabel: '$129/mo',
+    freeSummary: 'Free, Starter, and Professional use a single primary sender identity; multiple sender profiles require Business or higher.',
+    description:
+      'Configure dedicated sender profiles for Newsletters, Product Updates, Billing, and Executive announcements across multiple verified Resend domains.',
+    currentPlanLimits: [
+      'Single default sender name & email identity',
+      'Additional team sender identities locked',
+    ],
+    unlockedBenefits: [
+      'Multiple verified sender identities & reply-to addresses',
+      '100,000 campaign emails/month, 50 lists & 50,000 subscribers',
+      '15 team seats with RBAC & advanced campaign analytics',
     ],
   },
 };
@@ -424,6 +605,8 @@ export interface PlanQuotaDefaults {
   maxSubscribers: number;
   maxShortLinks: number;
   maxTeamSeats: number;
+  maxWidgets: number;
+  maxCampaignEmailsPerMonth: number;
   features: Partial<PlanFeatures>;
 }
 
@@ -432,10 +615,12 @@ export const TIER_DEFAULTS_BY_SLUG: Record<string, PlanQuotaDefaults> = {
     maxProjects: 1,
     maxApiKeys: 1,
     maxWebhooks: 0,
-    maxNewsletterLists: 0,
-    maxSubscribers: 0,
+    maxNewsletterLists: 1,
+    maxSubscribers: 500,
     maxShortLinks: 5,
     maxTeamSeats: 1,
+    maxWidgets: 2,
+    maxCampaignEmailsPerMonth: 500,
     features: {
       advancedBuilder: false,
       jsIntegration: false,
@@ -452,16 +637,25 @@ export const TIER_DEFAULTS_BY_SLUG: Record<string, PlanQuotaDefaults> = {
       customShortSlugs: false,
       svgQrExport: false,
       scopedApiKeys: false,
+      widgetCustomCss: false,
+      widgetDomainRestrictions: false,
+      campaignCustomTemplates: false,
+      campaignScheduling: false,
+      campaignSegmentation: false,
+      campaignAutomation: false,
+      multipleSenderIdentities: false,
     },
   },
   starter: {
     maxProjects: 3,
     maxApiKeys: 5,
     maxWebhooks: 0,
-    maxNewsletterLists: 3,
+    maxNewsletterLists: 5,
     maxSubscribers: 2500,
     maxShortLinks: 50,
     maxTeamSeats: 1,
+    maxWidgets: 10,
+    maxCampaignEmailsPerMonth: 5000,
     features: {
       advancedBuilder: true,
       jsIntegration: true,
@@ -478,16 +672,25 @@ export const TIER_DEFAULTS_BY_SLUG: Record<string, PlanQuotaDefaults> = {
       customShortSlugs: true,
       svgQrExport: true,
       scopedApiKeys: true,
+      widgetCustomCss: false,
+      widgetDomainRestrictions: false,
+      campaignCustomTemplates: true,
+      campaignScheduling: false,
+      campaignSegmentation: false,
+      campaignAutomation: false,
+      multipleSenderIdentities: false,
     },
   },
   professional: {
     maxProjects: 15,
     maxApiKeys: 25,
     maxWebhooks: 10,
-    maxNewsletterLists: 15,
-    maxSubscribers: 25000,
+    maxNewsletterLists: 20,
+    maxSubscribers: 10000,
     maxShortLinks: 250,
     maxTeamSeats: 1,
+    maxWidgets: 50,
+    maxCampaignEmailsPerMonth: 25000,
     features: {
       advancedBuilder: true,
       jsIntegration: true,
@@ -504,16 +707,25 @@ export const TIER_DEFAULTS_BY_SLUG: Record<string, PlanQuotaDefaults> = {
       customShortSlugs: true,
       svgQrExport: true,
       scopedApiKeys: true,
+      widgetCustomCss: true,
+      widgetDomainRestrictions: true,
+      campaignCustomTemplates: true,
+      campaignScheduling: true,
+      campaignSegmentation: true,
+      campaignAutomation: true,
+      multipleSenderIdentities: false,
     },
   },
   business: {
     maxProjects: 50,
     maxApiKeys: 100,
     maxWebhooks: 50,
-    maxNewsletterLists: 100,
-    maxSubscribers: 250000,
+    maxNewsletterLists: 50,
+    maxSubscribers: 50000,
     maxShortLinks: 1000,
     maxTeamSeats: BUSINESS_TEAM_SEATS,
+    maxWidgets: 200,
+    maxCampaignEmailsPerMonth: 100000,
     features: {
       advancedBuilder: true,
       jsIntegration: true,
@@ -530,6 +742,48 @@ export const TIER_DEFAULTS_BY_SLUG: Record<string, PlanQuotaDefaults> = {
       customShortSlugs: true,
       svgQrExport: true,
       scopedApiKeys: true,
+      widgetCustomCss: true,
+      widgetDomainRestrictions: true,
+      campaignCustomTemplates: true,
+      campaignScheduling: true,
+      campaignSegmentation: true,
+      campaignAutomation: true,
+      multipleSenderIdentities: true,
+    },
+  },
+  agency: {
+    maxProjects: 100,
+    maxApiKeys: 250,
+    maxWebhooks: 150,
+    maxNewsletterLists: 250,
+    maxSubscribers: 250000,
+    maxShortLinks: 5000,
+    maxTeamSeats: 50,
+    maxWidgets: 500,
+    maxCampaignEmailsPerMonth: 500000,
+    features: {
+      advancedBuilder: true,
+      jsIntegration: true,
+      restApi: true,
+      webhooks: true,
+      customEmailTemplates: true,
+      multipleRecipients: true,
+      removeBranding: true,
+      teamMembers: true,
+      prioritySupport: true,
+      advancedAnalytics: true,
+      newsletterApi: true,
+      pdfGenerator: true,
+      customShortSlugs: true,
+      svgQrExport: true,
+      scopedApiKeys: true,
+      widgetCustomCss: true,
+      widgetDomainRestrictions: true,
+      campaignCustomTemplates: true,
+      campaignScheduling: true,
+      campaignSegmentation: true,
+      campaignAutomation: true,
+      multipleSenderIdentities: true,
     },
   },
 };
@@ -561,6 +815,25 @@ export function hydratePlanQuotas(raw: Partial<PlanRecord>): PlanRecord {
     customShortSlugs: Boolean(rawFeatures.customShortSlugs ?? fallback.features.customShortSlugs),
     svgQrExport: Boolean(rawFeatures.svgQrExport ?? fallback.features.svgQrExport),
     scopedApiKeys: Boolean(rawFeatures.scopedApiKeys ?? fallback.features.scopedApiKeys),
+    widgetCustomCss: Boolean(rawFeatures.widgetCustomCss ?? fallback.features.widgetCustomCss),
+    widgetDomainRestrictions: Boolean(
+      rawFeatures.widgetDomainRestrictions ?? fallback.features.widgetDomainRestrictions
+    ),
+    campaignCustomTemplates: Boolean(
+      rawFeatures.campaignCustomTemplates ?? fallback.features.campaignCustomTemplates
+    ),
+    campaignScheduling: Boolean(
+      rawFeatures.campaignScheduling ?? fallback.features.campaignScheduling
+    ),
+    campaignSegmentation: Boolean(
+      rawFeatures.campaignSegmentation ?? fallback.features.campaignSegmentation
+    ),
+    campaignAutomation: Boolean(
+      rawFeatures.campaignAutomation ?? fallback.features.campaignAutomation
+    ),
+    multipleSenderIdentities: Boolean(
+      rawFeatures.multipleSenderIdentities ?? fallback.features.multipleSenderIdentities
+    ),
   };
 
   return {
@@ -584,6 +857,10 @@ export function hydratePlanQuotas(raw: Partial<PlanRecord>): PlanRecord {
     maxSubscribers: Number(raw.maxSubscribers ?? fallback.maxSubscribers),
     maxShortLinks: Number(raw.maxShortLinks ?? fallback.maxShortLinks),
     maxTeamSeats: Number(raw.maxTeamSeats ?? fallback.maxTeamSeats),
+    maxWidgets: Number(raw.maxWidgets ?? fallback.maxWidgets),
+    maxCampaignEmailsPerMonth: Number(
+      raw.maxCampaignEmailsPerMonth ?? fallback.maxCampaignEmailsPerMonth
+    ),
     features: mergedFeatures,
     isActive: raw.isActive !== false,
     isArchived: Boolean(raw.isArchived),

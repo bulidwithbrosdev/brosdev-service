@@ -701,13 +701,49 @@ export async function deleteApiKey(docId: string): Promise<void> {
 // 4. NEWSLETTER SUBSCRIPTION API (LISTS + PUBLIC PROJECTION + SUBSCRIBERS)
 // ============================================================================
 
+async function ensurePublicNewsletterProjection(list: {
+  id: number;
+  listKey: string;
+  ownerUid: string;
+  name: string;
+  status: 'active' | 'paused';
+}): Promise<void> {
+  if (!list.listKey) return;
+  try {
+    const pubRef = doc(db, 'publicNewsletterLists', list.listKey);
+    const pubSnap = await getDoc(pubRef);
+    if (!pubSnap.exists()) {
+      await setDoc(pubRef, {
+        listKey: list.listKey,
+        listId: Number(list.id || 0),
+        ownerUid: list.ownerUid,
+        name: list.name.slice(0, 120) || 'Newsletter',
+        status: list.status === 'paused' ? 'paused' : 'active',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      const existingStatus = pubSnap.data()?.status;
+      if (existingStatus !== list.status) {
+        await updateDoc(pubRef, {
+          name: list.name.slice(0, 120) || 'Newsletter',
+          status: list.status === 'paused' ? 'paused' : 'active',
+          updatedAt: serverTimestamp(),
+        });
+      }
+    }
+  } catch {
+    // Non-blocking best-effort projection repair
+  }
+}
+
 export async function listNewsletterLists(): Promise<NewsletterListRecord[]> {
   const uid = requireUid();
   try {
     const snap = await getDocs(
       query(collection(db, 'newsletterLists'), where('ownerUid', '==', uid))
     );
-    return snap.docs
+    const lists = snap.docs
       .map((d) => {
         const x = d.data();
         return {
@@ -726,6 +762,10 @@ export async function listNewsletterLists(): Promise<NewsletterListRecord[]> {
         } satisfies NewsletterListRecord;
       })
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+    // Auto-heal any older lists whose publicNewsletterLists projection was missing
+    void Promise.all(lists.map((item) => ensurePublicNewsletterProjection(item)));
+    return lists;
   } catch (err) {
     handleFirestoreError(err, OperationType.LIST, 'newsletterLists');
   }
@@ -799,10 +839,24 @@ export async function toggleNewsletterListStatus(list: NewsletterListRecord): Pr
       status: nextStatus,
       updatedAt: serverTimestamp(),
     });
-    await updateDoc(doc(db, 'publicNewsletterLists', list.listKey), {
-      status: nextStatus,
-      updatedAt: serverTimestamp(),
-    });
+    const pubRef = doc(db, 'publicNewsletterLists', list.listKey);
+    const pubSnap = await getDoc(pubRef);
+    if (pubSnap.exists()) {
+      await updateDoc(pubRef, {
+        status: nextStatus,
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      await setDoc(pubRef, {
+        listKey: list.listKey,
+        listId: Number(list.id || 0),
+        ownerUid: list.ownerUid,
+        name: list.name.slice(0, 120) || 'Newsletter',
+        status: nextStatus,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, `newsletterLists/${list.docId}`);
   }
@@ -813,7 +867,7 @@ export async function deleteNewsletterList(list: NewsletterListRecord): Promise<
   requireUid();
   try {
     await deleteDoc(doc(db, 'newsletterLists', list.docId));
-    await deleteDoc(doc(db, 'publicNewsletterLists', list.listKey));
+    await deleteDoc(doc(db, 'publicNewsletterLists', list.listKey)).catch(() => {});
   } catch (err) {
     handleFirestoreError(err, OperationType.DELETE, `newsletterLists/${list.docId}`);
   }
@@ -1133,17 +1187,38 @@ export async function deleteUtilityRecord(docId: string): Promise<void> {
 // ============================================================================
 
 export async function getDevServicesSummary(): Promise<DevServicesSummary> {
-  const [projects, webhooks, deliveries, apiKeys, lists, subscribers, links, utilities] =
-    await Promise.all([
-      listProjects().catch(() => []),
-      listWebhooks().catch(() => []),
-      listWebhookDeliveries().catch(() => []),
-      listApiKeys().catch(() => []),
-      listNewsletterLists().catch(() => []),
-      listNewsletterSubscribers().catch(() => []),
-      listShortLinks().catch(() => []),
-      listUtilityRecords().catch(() => []),
-    ]);
+  const uid = auth.currentUser?.uid;
+  const [
+    projects,
+    webhooks,
+    deliveries,
+    apiKeys,
+    lists,
+    subscribers,
+    links,
+    utilities,
+    widgetsSnap,
+    campaignsSnap,
+  ] = await Promise.all([
+    listProjects().catch(() => []),
+    listWebhooks().catch(() => []),
+    listWebhookDeliveries().catch(() => []),
+    listApiKeys().catch(() => []),
+    listNewsletterLists().catch(() => []),
+    listNewsletterSubscribers().catch(() => []),
+    listShortLinks().catch(() => []),
+    listUtilityRecords().catch(() => []),
+    uid
+      ? getDocs(query(collection(db, 'widgets'), where('ownerUid', '==', uid))).catch(() => null)
+      : Promise.resolve(null),
+    uid
+      ? getDocs(query(collection(db, 'email_campaigns'), where('ownerUid', '==', uid))).catch(
+          () => null
+        )
+      : Promise.resolve(null),
+  ]);
+
+  const widgetDocs = widgetsSnap ? widgetsSnap.docs.map((d) => d.data()) : [];
 
   return {
     projectsCount: projects.length,
@@ -1155,5 +1230,8 @@ export async function getDevServicesSummary(): Promise<DevServicesSummary> {
     shortLinksCount: links.length,
     shortLinkClicks: links.reduce((sum, l) => sum + l.clicks, 0),
     utilityRecordsCount: utilities.length,
+    widgetsCount: widgetDocs.length,
+    publishedWidgetsCount: widgetDocs.filter((w) => w.status === 'published').length,
+    campaignsCount: campaignsSnap ? campaignsSnap.size : 0,
   };
 }

@@ -13,8 +13,10 @@ const EMPTY_PLAN: Omit<PlanRecord, 'id'> = {
   yearlyPriceCents: 29000,
   trialDays: 14,
   maxForms: 25,
+  maxWidgets: 25,
   maxSubmissionsPerMonth: 5000,
   maxEmailsPerMonth: 5000,
+  maxCampaignEmailsPerMonth: 5000,
   maxApiRequestsPerMin: 120,
   maxStorageMb: 500,
   maxProjects: 5,
@@ -43,6 +45,13 @@ const EMPTY_PLAN: Omit<PlanRecord, 'id'> = {
     customShortSlugs: true,
     svgQrExport: true,
     scopedApiKeys: true,
+    widgetCustomCss: false,
+    widgetDomainRestrictions: false,
+    campaignCustomTemplates: true,
+    campaignScheduling: true,
+    campaignSegmentation: false,
+    campaignAutomation: false,
+    multipleSenderIdentities: false,
   },
 };
 
@@ -60,6 +69,13 @@ const FEATURE_LABELS: Record<keyof PlanRecord['features'], string> = {
   customShortSlugs: 'Custom Short Slugs & Expiry',
   pdfGenerator: 'PDF Document Generator',
   svgQrExport: 'Vector SVG QR Export',
+  widgetCustomCss: 'Widget Scoped Custom CSS',
+  widgetDomainRestrictions: 'Widget Domain Allowlists',
+  campaignCustomTemplates: 'Campaign Custom Templates',
+  campaignScheduling: 'Campaign Scheduling',
+  campaignSegmentation: 'Dynamic Subscriber Segments',
+  campaignAutomation: 'Automated Email Sequences',
+  multipleSenderIdentities: 'Multiple Sender Identities',
   teamMembers: 'Team Collaboration (RBAC)',
   prioritySupport: 'Priority Support',
 };
@@ -199,8 +215,10 @@ export const AdminPlansView: React.FC = () => {
               </div>
               <div className="mt-4 pt-4 border-t border-[#EFEFEF] space-y-1.5 text-xs text-[#333333] tabular-nums">
                 <div>Projects: <strong>{p.maxProjects}</strong> · API Keys: <strong>{p.maxApiKeys}</strong></div>
-                <div>Forms: <strong>{p.maxForms}</strong> · Subs/mo: <strong>{p.maxSubmissionsPerMonth.toLocaleString()}</strong></div>
+                <div>Published Widgets: <strong>{p.maxWidgets ?? 2}</strong> · Forms: <strong>{p.maxForms}</strong></div>
+                <div>Subs/mo: <strong>{p.maxSubmissionsPerMonth.toLocaleString()}</strong></div>
                 <div>Emails/mo: <strong>{p.maxEmailsPerMonth.toLocaleString()}</strong></div>
+                <div>Campaign Emails/mo: <strong>{(p.maxCampaignEmailsPerMonth ?? 500).toLocaleString()}</strong></div>
                 <div>Webhooks: <strong>{p.features.webhooks ? p.maxWebhooks : 'Locked'}</strong></div>
                 <div>
                   Newsletter:{' '}
@@ -352,6 +370,16 @@ export const AdminPlansView: React.FC = () => {
                   />
                 </div>
                 <div>
+                  <label className="block text-[11px] font-semibold text-[#525252] mb-1">Max Widgets</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editing.maxWidgets ?? 2}
+                    onChange={(e) => setEditing({ ...editing, maxWidgets: Number(e.target.value) })}
+                    className="w-full px-2.5 py-1.5 text-xs font-mono border border-[#D4D4D4] rounded-md"
+                  />
+                </div>
+                <div>
                   <label className="block text-[11px] font-semibold text-[#525252] mb-1">Submissions / Mo</label>
                   <input
                     type="number"
@@ -371,6 +399,23 @@ export const AdminPlansView: React.FC = () => {
                     value={editing.maxEmailsPerMonth}
                     onChange={(e) =>
                       setEditing({ ...editing, maxEmailsPerMonth: Number(e.target.value) })
+                    }
+                    className="w-full px-2.5 py-1.5 text-xs font-mono border border-[#D4D4D4] rounded-md"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-[#525252] mb-1">
+                    Campaign Emails / Mo
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editing.maxCampaignEmailsPerMonth ?? 500}
+                    onChange={(e) =>
+                      setEditing({
+                        ...editing,
+                        maxCampaignEmailsPerMonth: Number(e.target.value),
+                      })
                     }
                     className="w-full px-2.5 py-1.5 text-xs font-mono border border-[#D4D4D4] rounded-md"
                   />

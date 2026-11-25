@@ -16,16 +16,26 @@
       "destination": "/api/r/:slug"
     },
     {
-      "source": "/api/newsletter/:listKey/subscribe",
-      "destination": "/api/newsletter/:listKey"
-    },
-    {
       "source": "/api/billing/razorpay/webhook",
       "destination": "/api/billing/razorpay-webhook"
     },
     {
+      "source": "/embed.js",
+      "destination": "/api/widgets/embed"
+    },
+    {
+      "source": "/api/widgets/embed.js",
+      "destination": "/api/widgets/embed"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/campaigns",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

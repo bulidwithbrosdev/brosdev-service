@@ -241,7 +241,8 @@ service cloud.firestore {
           'maxForms', 'maxSubmissionsPerMonth', 'maxEmailsPerMonth',
           'maxApiRequestsPerMin', 'maxStorageMb',
           'maxProjects', 'maxApiKeys', 'maxWebhooks',
-          'maxNewsletterLists', 'maxSubscribers', 'maxShortLinks', 'maxTeamSeats',
+          'maxNewsletterLists', 'maxSubscribers', 'maxShortLinks', 'maxTeamSeats', 'maxWidgets',
+          'maxCampaignEmailsPerMonth',
           'features',
           'isActive', 'isArchived', 'sortOrder', 'createdAt', 'updatedAt'
         ])
@@ -265,6 +266,8 @@ service cloud.firestore {
         && (!('maxSubscribers' in data) || (data.maxSubscribers is number && data.maxSubscribers >= 0))
         && (!('maxShortLinks' in data) || (data.maxShortLinks is number && data.maxShortLinks >= 0))
         && (!('maxTeamSeats' in data) || (data.maxTeamSeats is number && data.maxTeamSeats >= 0))
+        && (!('maxWidgets' in data) || (data.maxWidgets is number && data.maxWidgets >= 0))
+        && (!('maxCampaignEmailsPerMonth' in data) || (data.maxCampaignEmailsPerMonth is number && data.maxCampaignEmailsPerMonth >= 0))
         && data.features is map
         && data.isActive is bool
         && data.isArchived is bool
@@ -590,6 +593,518 @@ service cloud.firestore {
         && data.config is map
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
+    }
+
+    function isValidWidget(data) {
+      return data.keys().hasAll([
+          'id', 'publicId', 'ownerUid', 'name', 'type', 'group', 'category',
+          'status', 'version', 'publishedVersion', 'configuration',
+          'domainRestrictionEnabled', 'allowedDomains', 'allowSubdomains',
+          'abuseFlagged', 'abuseReason', 'publishedAt', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'publicId', 'ownerUid', 'projectKey', 'name', 'type', 'group', 'category',
+          'status', 'version', 'publishedVersion', 'configuration', 'publishedConfiguration',
+          'domainRestrictionEnabled', 'allowedDomains', 'allowSubdomains',
+          'abuseFlagged', 'abuseReason', 'publishedAt', 'createdAt', 'updatedAt'
+        ])
+        && data.id is number
+        && isValidId(data.publicId) && data.publicId.size() <= 64
+        && isValidId(data.ownerUid)
+        && (!('projectKey' in data) || isBoundedString(data.projectKey, 64))
+        && isBoundedNonEmptyString(data.name, 140)
+        && isBoundedNonEmptyString(data.type, 64)
+        && data.group in ['ui', 'business']
+        && isBoundedNonEmptyString(data.category, 64)
+        && data.status in ['draft', 'published', 'disabled']
+        && data.version is number && data.version >= 1
+        && data.publishedVersion is number && data.publishedVersion >= 0
+        && data.configuration is map
+        && (!('publishedConfiguration' in data) || data.publishedConfiguration == null || data.publishedConfiguration is map)
+        && data.domainRestrictionEnabled is bool
+        && data.allowedDomains is list && data.allowedDomains.size() <= 50
+        && (data.allowedDomains.size() == 0 || data.allowedDomains[0] is string)
+        && data.allowSubdomains is bool
+        && data.abuseFlagged is bool
+        && isBoundedString(data.abuseReason, 500)
+        && isBoundedString(data.publishedAt, 64)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPublicWidget(data) {
+      return data.keys().hasAll([
+          'publicId', 'widgetId', 'widgetDocId', 'ownerUid', 'name', 'type', 'group', 'category',
+          'status', 'publishedVersion', 'configuration', 'domainRestrictionEnabled',
+          'allowedDomains', 'allowSubdomains', 'totalViews', 'totalClicks', 'lastLoadedAt',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'publicId', 'widgetId', 'widgetDocId', 'ownerUid', 'name', 'type', 'group', 'category',
+          'status', 'publishedVersion', 'configuration', 'domainRestrictionEnabled',
+          'allowedDomains', 'allowSubdomains', 'totalViews', 'totalClicks', 'lastLoadedAt',
+          'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.publicId) && data.publicId.size() <= 64
+        && data.widgetId is number
+        && isValidId(data.widgetDocId)
+        && isValidId(data.ownerUid)
+        && isBoundedNonEmptyString(data.name, 140)
+        && isBoundedNonEmptyString(data.type, 64)
+        && data.group in ['ui', 'business']
+        && isBoundedNonEmptyString(data.category, 64)
+        && data.status in ['draft', 'published', 'disabled']
+        && data.publishedVersion is number && data.publishedVersion >= 0
+        && data.configuration is map
+        && data.domainRestrictionEnabled is bool
+        && data.allowedDomains is list && data.allowedDomains.size() <= 50
+        && (data.allowedDomains.size() == 0 || data.allowedDomains[0] is string)
+        && data.allowSubdomains is bool
+        && data.totalViews is number && data.totalViews >= 0
+        && data.totalClicks is number && data.totalClicks >= 0
+        && isBoundedString(data.lastLoadedAt, 64)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidWidgetVersion(data) {
+      return data.keys().hasAll([
+          'id', 'widgetId', 'widgetDocId', 'publicId', 'ownerUid',
+          'version', 'label', 'action', 'configuration', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'widgetId', 'widgetDocId', 'publicId', 'ownerUid',
+          'version', 'label', 'action', 'configuration', 'createdAt'
+        ])
+        && data.id is number
+        && data.widgetId is number
+        && isValidId(data.widgetDocId)
+        && isValidId(data.publicId) && data.publicId.size() <= 64
+        && isValidId(data.ownerUid)
+        && data.version is number && data.version >= 1
+        && isBoundedNonEmptyString(data.label, 160)
+        && data.action in ['publish', 'draft_snapshot', 'restore']
+        && data.configuration is map
+        && data.createdAt is timestamp;
+    }
+
+    function isValidWidgetDomain(data) {
+      return data.keys().hasAll([
+          'id', 'ownerUid', 'widgetId', 'publicId', 'domain', 'allowSubdomains',
+          'verified', 'verificationToken', 'lastLoadedAt', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerUid', 'widgetId', 'publicId', 'domain', 'allowSubdomains',
+          'verified', 'verificationToken', 'lastLoadedAt', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.id is number
+        && isValidId(data.ownerUid)
+        && data.widgetId is number
+        && isValidId(data.publicId) && data.publicId.size() <= 64
+        && isBoundedNonEmptyString(data.domain, 160)
+        && data.allowSubdomains is bool
+        && data.verified is bool
+        && isBoundedNonEmptyString(data.verificationToken, 80)
+        && isBoundedString(data.lastLoadedAt, 64)
+        && data.status in ['active', 'pending', 'disabled']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidWidgetDailyStat(data) {
+      return data.keys().hasAll([
+          'publicId', 'widgetId', 'ownerUid', 'dateKey',
+          'impressions', 'loads', 'uniqueVisitors', 'clicks', 'ctaClicks',
+          'popupOpens', 'popupCloses', 'consentAccepts', 'consentRejects', 'errors',
+          'desktopCount', 'tabletCount', 'mobileCount', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'publicId', 'widgetId', 'ownerUid', 'dateKey',
+          'impressions', 'loads', 'uniqueVisitors', 'clicks', 'ctaClicks',
+          'popupOpens', 'popupCloses', 'consentAccepts', 'consentRejects', 'errors',
+          'desktopCount', 'tabletCount', 'mobileCount', 'updatedAt'
+        ])
+        && isValidId(data.publicId) && data.publicId.size() <= 64
+        && data.widgetId is number
+        && isValidId(data.ownerUid)
+        && data.dateKey is string && data.dateKey.size() == 10 && data.dateKey.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && data.impressions is number && data.impressions >= 0
+        && data.loads is number && data.loads >= 0
+        && data.uniqueVisitors is number && data.uniqueVisitors >= 0
+        && data.clicks is number && data.clicks >= 0
+        && data.ctaClicks is number && data.ctaClicks >= 0
+        && data.popupOpens is number && data.popupOpens >= 0
+        && data.popupCloses is number && data.popupCloses >= 0
+        && data.consentAccepts is number && data.consentAccepts >= 0
+        && data.consentRejects is number && data.consentRejects >= 0
+        && data.errors is number && data.errors >= 0
+        && data.desktopCount is number && data.desktopCount >= 0
+        && data.tabletCount is number && data.tabletCount >= 0
+        && data.mobileCount is number && data.mobileCount >= 0
+        && data.updatedAt is timestamp;
+    }
+
+    // Phase 3 Email Campaigns Studio Validation Blueprints
+    function isValidEmailCampaign(data) {
+      return data.keys().hasAll([
+          'id', 'ownerUid', 'name', 'campaignType', 'status', 'subject', 'previewText',
+          'senderName', 'senderEmail', 'replyTo', 'audienceType', 'listIds', 'blocks',
+          'designSettings', 'recipientCount', 'stats', 'removeBranding', 'abuseSuspended',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerUid', 'projectKey', 'name', 'campaignType', 'status', 'subject', 'previewText',
+          'senderName', 'senderEmail', 'replyTo', 'audienceType', 'listIds', 'segmentId',
+          'templateId', 'blocks', 'designSettings', 'compiledHtml', 'compiledText',
+          'scheduledAt', 'timezone', 'sentAt', 'recipientCount', 'stats',
+          'removeBranding', 'abuseSuspended', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.ownerUid)
+        && (!('projectKey' in data) || isBoundedString(data.projectKey, 64))
+        && isBoundedNonEmptyString(data.name, 160)
+        && data.campaignType in ['newsletter', 'announcement', 'promotional', 'transactional_update']
+        && data.status in ['draft', 'scheduled', 'sending', 'sent', 'paused', 'canceled', 'failed']
+        && isBoundedString(data.subject, 240)
+        && isBoundedString(data.previewText, 300)
+        && isBoundedString(data.senderName, 120)
+        && isBoundedString(data.senderEmail, 254)
+        && isBoundedString(data.replyTo, 254)
+        && data.audienceType in ['list', 'segment', 'all_subscribed']
+        && data.listIds is list && data.listIds.size() <= 30
+        && (data.listIds.size() == 0 || data.listIds[0] is string)
+        && (!('segmentId' in data) || isBoundedString(data.segmentId, 128))
+        && (!('templateId' in data) || isBoundedString(data.templateId, 128))
+        && data.blocks is list && data.blocks.size() <= 60
+        && (data.blocks.size() == 0 || data.blocks[0] is map)
+        && data.designSettings is map
+        && (!('compiledHtml' in data) || isBoundedString(data.compiledHtml, 200000))
+        && (!('compiledText' in data) || isBoundedString(data.compiledText, 60000))
+        && (!('scheduledAt' in data) || isBoundedString(data.scheduledAt, 64))
+        && (!('timezone' in data) || isBoundedString(data.timezone, 64))
+        && (!('sentAt' in data) || isBoundedString(data.sentAt, 64))
+        && data.recipientCount is number && data.recipientCount >= 0
+        && data.stats is map
+        && data.removeBranding is bool
+        && data.abuseSuspended is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidEmailCampaignVersion(data) {
+      return data.keys().hasAll([
+          'id', 'campaignId', 'ownerUid', 'version', 'subject', 'blocks', 'designSettings', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'campaignId', 'ownerUid', 'version', 'subject', 'blocks', 'designSettings', 'createdAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.campaignId)
+        && isValidId(data.ownerUid)
+        && data.version is number && data.version >= 1
+        && isBoundedString(data.subject, 240)
+        && data.blocks is list && data.blocks.size() <= 60
+        && (data.blocks.size() == 0 || data.blocks[0] is map)
+        && data.designSettings is map
+        && data.createdAt is timestamp;
+    }
+
+    function isValidEmailList(data) {
+      return data.keys().hasAll([
+          'id', 'ownerUid', 'name', 'description', 'doubleOptIn', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerUid', 'name', 'description', 'doubleOptIn', 'defaultSenderEmail', 'status', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.ownerUid)
+        && isBoundedNonEmptyString(data.name, 120)
+        && isBoundedString(data.description, 500)
+        && data.doubleOptIn is bool
+        && (!('defaultSenderEmail' in data) || isBoundedString(data.defaultSenderEmail, 254))
+        && data.status in ['active', 'archived']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidEmailSubscriber(data) {
+      return data.keys().hasAll([
+          'id', 'ownerUid', 'email', 'firstName', 'lastName', 'status',
+          'listIds', 'tags', 'customFields', 'source', 'consentConfirmed',
+          'subscribedAt', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerUid', 'email', 'firstName', 'lastName', 'status',
+          'listIds', 'tags', 'customFields', 'source', 'consentConfirmed',
+          'consentNote', 'subscribedAt', 'unsubscribedAt', 'lastActivityAt',
+          'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.ownerUid)
+        && isBoundedNonEmptyString(data.email, 254)
+        && isBoundedString(data.firstName, 100)
+        && isBoundedString(data.lastName, 100)
+        && data.status in ['subscribed', 'pending', 'unsubscribed', 'bounced', 'complained', 'suppressed']
+        && data.listIds is list && data.listIds.size() <= 30
+        && (data.listIds.size() == 0 || data.listIds[0] is string)
+        && data.tags is list && data.tags.size() <= 25
+        && (data.tags.size() == 0 || data.tags[0] is string)
+        && data.customFields is map
+        && isBoundedString(data.source, 80)
+        && data.consentConfirmed is bool
+        && (!('consentNote' in data) || isBoundedString(data.consentNote, 240))
+        && isBoundedString(data.subscribedAt, 64)
+        && (!('unsubscribedAt' in data) || isBoundedString(data.unsubscribedAt, 64))
+        && (!('lastActivityAt' in data) || isBoundedString(data.lastActivityAt, 64))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidEmailSegment(data) {
+      return data.keys().hasAll([
+          'id', 'ownerUid', 'name', 'description', 'matchType', 'rules', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerUid', 'name', 'description', 'matchType', 'rules', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.ownerUid)
+        && isBoundedNonEmptyString(data.name, 120)
+        && isBoundedString(data.description, 400)
+        && data.matchType in ['all', 'any']
+        && data.rules is list && data.rules.size() <= 20
+        && (data.rules.size() == 0 || data.rules[0] is map)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidEmailTemplate(data) {
+      return data.keys().hasAll([
+          'id', 'ownerUid', 'name', 'category', 'description', 'subject', 'previewText',
+          'blocks', 'designSettings', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerUid', 'name', 'category', 'description', 'subject', 'previewText',
+          'blocks', 'designSettings', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.ownerUid)
+        && isBoundedNonEmptyString(data.name, 120)
+        && isBoundedNonEmptyString(data.category, 64)
+        && isBoundedString(data.description, 400)
+        && isBoundedString(data.subject, 240)
+        && isBoundedString(data.previewText, 300)
+        && data.blocks is list && data.blocks.size() <= 60
+        && (data.blocks.size() == 0 || data.blocks[0] is map)
+        && data.designSettings is map
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidEmailAutomation(data) {
+      return data.keys().hasAll([
+          'id', 'ownerUid', 'name', 'description', 'triggerType', 'status',
+          'triggeredCount', 'sentCount', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerUid', 'name', 'description', 'triggerType', 'targetListId',
+          'status', 'triggeredCount', 'sentCount', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.ownerUid)
+        && isBoundedNonEmptyString(data.name, 140)
+        && isBoundedString(data.description, 400)
+        && data.triggerType in ['new_subscriber', 'subscriber_confirmed', 'added_to_list', 'new_customer', 'product_announcement', 'scheduled_newsletter']
+        && (!('targetListId' in data) || isBoundedString(data.targetListId, 128))
+        && data.status in ['active', 'paused', 'draft']
+        && data.triggeredCount is number && data.triggeredCount >= 0
+        && data.sentCount is number && data.sentCount >= 0
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidEmailAutomationStep(data) {
+      return data.keys().hasAll([
+          'id', 'automationId', 'ownerUid', 'stepOrder', 'actionType',
+          'delayMinutes', 'subject', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'automationId', 'ownerUid', 'stepOrder', 'actionType',
+          'delayMinutes', 'subject', 'templateId', 'tagValue', 'statusValue',
+          'blocks', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.automationId)
+        && isValidId(data.ownerUid)
+        && data.stepOrder is number && data.stepOrder >= 1 && data.stepOrder <= 50
+        && data.actionType in ['send_welcome', 'send_confirmation', 'send_announcement', 'send_followup', 'add_tag', 'update_status']
+        && data.delayMinutes is number && data.delayMinutes >= 0 && data.delayMinutes <= 525600
+        && isBoundedString(data.subject, 240)
+        && (!('templateId' in data) || isBoundedString(data.templateId, 128))
+        && (!('tagValue' in data) || isBoundedString(data.tagValue, 64))
+        && (!('statusValue' in data) || isBoundedString(data.statusValue, 40))
+        && (!('blocks' in data) || (data.blocks is list && data.blocks.size() <= 40 && (data.blocks.size() == 0 || data.blocks[0] is map)))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidEmailScheduledJob(data) {
+      return data.keys().hasAll([
+          'id', 'ownerUid', 'jobType', 'status', 'scheduledAt', 'timezone',
+          'attempts', 'maxAttempts', 'idempotencyKey', 'processedCount',
+          'failedCount', 'lastError', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerUid', 'jobType', 'campaignId', 'automationId', 'stepId',
+          'subscriberEmail', 'status', 'scheduledAt', 'timezone',
+          'attempts', 'maxAttempts', 'idempotencyKey', 'processedCount',
+          'failedCount', 'lastError', 'startedAt', 'completedAt',
+          'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.ownerUid)
+        && data.jobType in ['campaign_send', 'automation_step']
+        && (!('campaignId' in data) || isBoundedString(data.campaignId, 128))
+        && (!('automationId' in data) || isBoundedString(data.automationId, 128))
+        && (!('stepId' in data) || isBoundedString(data.stepId, 128))
+        && (!('subscriberEmail' in data) || isBoundedString(data.subscriberEmail, 254))
+        && data.status in ['queued', 'processing', 'completed', 'failed', 'canceled', 'paused']
+        && isBoundedNonEmptyString(data.scheduledAt, 64)
+        && isBoundedNonEmptyString(data.timezone, 64)
+        && data.attempts is number && data.attempts >= 0
+        && data.maxAttempts is number && data.maxAttempts >= 1 && data.maxAttempts <= 10
+        && isBoundedNonEmptyString(data.idempotencyKey, 128)
+        && data.processedCount is number && data.processedCount >= 0
+        && data.failedCount is number && data.failedCount >= 0
+        && isBoundedString(data.lastError, 1000)
+        && (!('startedAt' in data) || isBoundedString(data.startedAt, 64))
+        && (!('completedAt' in data) || isBoundedString(data.completedAt, 64))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidEmailDeliveryEvent(data) {
+      return data.keys().hasAll([
+          'id', 'ownerUid', 'campaignId', 'subscriberEmail', 'providerMessageId',
+          'eventType', 'occurredAt', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerUid', 'campaignId', 'subscriberEmail', 'providerMessageId',
+          'eventType', 'linkUrl', 'errorMessage', 'occurredAt', 'createdAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.ownerUid)
+        && isBoundedNonEmptyString(data.campaignId, 128)
+        && isBoundedNonEmptyString(data.subscriberEmail, 254)
+        && isBoundedString(data.providerMessageId, 160)
+        && data.eventType in ['sent', 'delivered', 'opened', 'clicked', 'bounced', 'complained', 'unsubscribed', 'failed']
+        && (!('linkUrl' in data) || isBoundedString(data.linkUrl, 500))
+        && (!('errorMessage' in data) || isBoundedString(data.errorMessage, 600))
+        && isBoundedNonEmptyString(data.occurredAt, 64)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidEmailSuppression(data) {
+      return data.keys().hasAll([
+          'id', 'ownerUid', 'email', 'reason', 'source', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerUid', 'email', 'reason', 'source', 'campaignId', 'createdAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.ownerUid)
+        && isBoundedNonEmptyString(data.email, 254)
+        && data.reason in ['unsubscribed', 'hard_bounce', 'spam_complaint', 'manual']
+        && isBoundedNonEmptyString(data.source, 80)
+        && (!('campaignId' in data) || isBoundedString(data.campaignId, 128))
+        && data.createdAt is timestamp;
+    }
+
+    function isValidEmailSenderDomain(data) {
+      return data.keys().hasAll([
+          'id', 'ownerUid', 'domain', 'status', 'dnsRecords', 'lastCheckedAt', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerUid', 'domain', 'resendDomainId', 'status', 'region', 'dnsRecords',
+          'lastCheckedAt', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.ownerUid)
+        && isBoundedNonEmptyString(data.domain, 160)
+        && (!('resendDomainId' in data) || isBoundedString(data.resendDomainId, 128))
+        && data.status in ['pending', 'verified', 'failed', 'not_started']
+        && (!('region' in data) || isBoundedString(data.region, 40))
+        && data.dnsRecords is list && data.dnsRecords.size() <= 20
+        && (data.dnsRecords.size() == 0 || data.dnsRecords[0] is map)
+        && isBoundedString(data.lastCheckedAt, 64)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidEmailSenderSettings(data) {
+      return data.keys().hasAll([
+          'ownerUid', 'senderName', 'senderEmail', 'replyTo', 'companyName',
+          'companyWebsite', 'companyLogoUrl', 'companyAddress', 'defaultFooter',
+          'doubleOptInDefault', 'campaignSuspended', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerUid', 'senderName', 'senderEmail', 'replyTo', 'companyName',
+          'companyWebsite', 'companyLogoUrl', 'companyAddress', 'defaultFooter',
+          'additionalIdentities', 'doubleOptInDefault', 'campaignSuspended',
+          'suspensionReason', 'updatedAt'
+        ])
+        && isValidId(data.ownerUid)
+        && isBoundedString(data.senderName, 120)
+        && isBoundedString(data.senderEmail, 254)
+        && isBoundedString(data.replyTo, 254)
+        && isBoundedString(data.companyName, 160)
+        && isBoundedString(data.companyWebsite, 300)
+        && isBoundedString(data.companyLogoUrl, 500)
+        && isBoundedString(data.companyAddress, 300)
+        && isBoundedString(data.defaultFooter, 600)
+        && (!('additionalIdentities' in data) || (data.additionalIdentities is list && data.additionalIdentities.size() <= 20 && (data.additionalIdentities.size() == 0 || data.additionalIdentities[0] is map)))
+        && data.doubleOptInDefault is bool
+        && data.campaignSuspended is bool
+        && (!('suspensionReason' in data) || isBoundedString(data.suspensionReason, 400))
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidEmailCampaignUsage(data) {
+      return data.keys().hasAll([
+          'id', 'ownerUid', 'monthKey', 'emailsSent', 'campaignsSent', 'bounces', 'complaints', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerUid', 'monthKey', 'emailsSent', 'campaignsSent', 'bounces', 'complaints', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.ownerUid)
+        && data.monthKey is string && data.monthKey.size() == 7 && data.monthKey.matches('^[0-9]{4}-[0-9]{2}$')
+        && data.emailsSent is number && data.emailsSent >= 0
+        && data.campaignsSent is number && data.campaignsSent >= 0
+        && data.bounces is number && data.bounces >= 0
+        && data.complaints is number && data.complaints >= 0
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidEmailWebhookEvent(data) {
+      return data.keys().hasAll([
+          'id', 'ownerUid', 'campaignId', 'provider', 'eventType',
+          'providerMessageId', 'recipientEmail', 'status', 'receivedAt', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerUid', 'campaignId', 'provider', 'eventType',
+          'providerMessageId', 'recipientEmail', 'status', 'receivedAt', 'createdAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.ownerUid)
+        && isBoundedNonEmptyString(data.campaignId, 128)
+        && data.provider in ['resend']
+        && isBoundedNonEmptyString(data.eventType, 64)
+        && isBoundedString(data.providerMessageId, 160)
+        && isBoundedString(data.recipientEmail, 254)
+        && data.status in ['processed', 'ignored', 'failed']
+        && isBoundedNonEmptyString(data.receivedAt, 64)
+        && data.createdAt is timestamp;
     }
 
     // 1. Users Collection (PII Isolated)
@@ -1221,6 +1736,632 @@ service cloud.firestore {
         && (isAdmin() || incoming().ownerUid == request.auth.uid);
       allow update: if false;
       allow delete: if isSignedIn() && isValidId(recordId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 23. Phase 2 Website Components & Widgets Collection (Owner/Admin Isolated)
+    match /widgets/{widgetId} {
+      allow get: if isSignedIn() && isValidId(widgetId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(widgetId)
+        && isValidWidget(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            incoming().ownerUid == request.auth.uid
+            && incoming().status != 'disabled'
+            && incoming().abuseFlagged == false
+          )
+        );
+      allow update: if isSignedIn()
+        && isValidId(widgetId)
+        && isValidWidget(incoming())
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().publicId == existing().publicId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            existing().ownerUid == request.auth.uid
+            && existing().status != 'disabled'
+            && incoming().status != 'disabled'
+            && incoming().abuseFlagged == existing().abuseFlagged
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'type', 'group', 'category', 'projectKey', 'status',
+              'version', 'publishedVersion', 'configuration', 'publishedConfiguration',
+              'domainRestrictionEnabled', 'allowedDomains', 'allowSubdomains',
+              'publishedAt', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isSignedIn() && isValidId(widgetId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 24. Public Widgets Projection (Non-PII — Public GET for Published Widgets)
+    match /publicWidgets/{publicId} {
+      allow get: if isValidId(publicId) && (
+        resource == null
+        || existing().status == 'published'
+        || (isSignedIn() && existing().ownerUid == request.auth.uid)
+        || isAdmin()
+      );
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(publicId)
+        && isValidPublicWidget(incoming())
+        && incoming().publicId == publicId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (isAdmin() || incoming().ownerUid == request.auth.uid);
+      allow update: if isValidId(publicId)
+        && isValidPublicWidget(incoming())
+        && incoming().publicId == existing().publicId
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            isSignedIn()
+            && existing().ownerUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'type', 'group', 'category', 'status', 'publishedVersion',
+              'configuration', 'domainRestrictionEnabled', 'allowedDomains',
+              'allowSubdomains', 'updatedAt'
+            ])
+          )
+          || (
+            existing().status == 'published'
+            && incoming().totalViews >= existing().totalViews
+            && incoming().totalViews <= existing().totalViews + 1
+            && incoming().totalClicks >= existing().totalClicks
+            && incoming().totalClicks <= existing().totalClicks + 1
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'totalViews', 'totalClicks', 'lastLoadedAt', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isSignedIn() && isValidId(publicId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 25. Widget Version Snapshots (Immutable History — Safe Publishing & Rollback)
+    match /widgetVersions/{versionId} {
+      allow get: if isSignedIn() && isValidId(versionId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(versionId)
+        && isValidWidgetVersion(incoming())
+        && incoming().createdAt == request.time
+        && (isAdmin() || incoming().ownerUid == request.auth.uid);
+      allow update: if false;
+      allow delete: if isSignedIn() && isValidId(versionId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 26. Widget Allowed Domains Collection (Owner/Admin Managed)
+    match /widgetDomains/{domainId} {
+      allow get: if isSignedIn() && isValidId(domainId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(domainId)
+        && isValidWidgetDomain(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (isAdmin() || incoming().ownerUid == request.auth.uid);
+      allow update: if isSignedIn()
+        && isValidId(domainId)
+        && isValidWidgetDomain(incoming())
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().publicId == existing().publicId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            existing().ownerUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'allowSubdomains', 'verified', 'status', 'lastLoadedAt', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isSignedIn() && isValidId(domainId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 27. Daily Aggregated Widget Analytics (Privacy-Conscious Bounded Counters)
+    match /widgetDailyStats/{statId} {
+      allow get: if isSignedIn() && isValidId(statId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isValidId(statId)
+        && isValidWidgetDailyStat(incoming())
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (isSignedIn() && incoming().ownerUid == request.auth.uid)
+          || (
+            exists(/databases/$(database)/documents/publicWidgets/$(incoming().publicId))
+            && get(/databases/$(database)/documents/publicWidgets/$(incoming().publicId)).data.status == 'published'
+            && get(/databases/$(database)/documents/publicWidgets/$(incoming().publicId)).data.ownerUid == incoming().ownerUid
+            && get(/databases/$(database)/documents/publicWidgets/$(incoming().publicId)).data.widgetId == incoming().widgetId
+            && incoming().impressions <= 1
+            && incoming().loads <= 1
+            && incoming().uniqueVisitors <= 1
+            && incoming().clicks <= 1
+            && incoming().ctaClicks <= 1
+            && incoming().popupOpens <= 1
+            && incoming().popupCloses <= 1
+            && incoming().consentAccepts <= 1
+            && incoming().consentRejects <= 1
+            && incoming().errors <= 1
+            && incoming().desktopCount <= 1
+            && incoming().tabletCount <= 1
+            && incoming().mobileCount <= 1
+          )
+        );
+      allow update: if isValidId(statId)
+        && isValidWidgetDailyStat(incoming())
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().publicId == existing().publicId
+        && incoming().widgetId == existing().widgetId
+        && incoming().dateKey == existing().dateKey
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (isSignedIn() && existing().ownerUid == request.auth.uid)
+          || (
+            exists(/databases/$(database)/documents/publicWidgets/$(existing().publicId))
+            && get(/databases/$(database)/documents/publicWidgets/$(existing().publicId)).data.status == 'published'
+            && incoming().impressions >= existing().impressions && incoming().impressions <= existing().impressions + 1
+            && incoming().loads >= existing().loads && incoming().loads <= existing().loads + 1
+            && incoming().uniqueVisitors >= existing().uniqueVisitors && incoming().uniqueVisitors <= existing().uniqueVisitors + 1
+            && incoming().clicks >= existing().clicks && incoming().clicks <= existing().clicks + 1
+            && incoming().ctaClicks >= existing().ctaClicks && incoming().ctaClicks <= existing().ctaClicks + 1
+            && incoming().popupOpens >= existing().popupOpens && incoming().popupOpens <= existing().popupOpens + 1
+            && incoming().popupCloses >= existing().popupCloses && incoming().popupCloses <= existing().popupCloses + 1
+            && incoming().consentAccepts >= existing().consentAccepts && incoming().consentAccepts <= existing().consentAccepts + 1
+            && incoming().consentRejects >= existing().consentRejects && incoming().consentRejects <= existing().consentRejects + 1
+            && incoming().errors >= existing().errors && incoming().errors <= existing().errors + 1
+            && incoming().desktopCount >= existing().desktopCount && incoming().desktopCount <= existing().desktopCount + 1
+            && incoming().tabletCount >= existing().tabletCount && incoming().tabletCount <= existing().tabletCount + 1
+            && incoming().mobileCount >= existing().mobileCount && incoming().mobileCount <= existing().mobileCount + 1
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'impressions', 'loads', 'uniqueVisitors', 'clicks', 'ctaClicks',
+              'popupOpens', 'popupCloses', 'consentAccepts', 'consentRejects', 'errors',
+              'desktopCount', 'tabletCount', 'mobileCount', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isSignedIn() && isValidId(statId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 28. Phase 3 Email Campaigns Collection (Owner/Admin Isolated)
+    match /email_campaigns/{campaignId} {
+      allow get: if isSignedIn() && isValidId(campaignId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(campaignId)
+        && isValidEmailCampaign(incoming())
+        && incoming().id == campaignId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            incoming().ownerUid == request.auth.uid
+            && incoming().abuseSuspended == false
+          )
+        );
+      allow update: if isSignedIn()
+        && isValidId(campaignId)
+        && isValidEmailCampaign(incoming())
+        && incoming().id == existing().id
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            existing().ownerUid == request.auth.uid
+            && existing().abuseSuspended == false
+            && incoming().abuseSuspended == false
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'campaignType', 'status', 'subject', 'previewText', 'senderName',
+              'senderEmail', 'replyTo', 'audienceType', 'listIds', 'segmentId', 'templateId',
+              'blocks', 'designSettings', 'compiledHtml', 'compiledText', 'scheduledAt',
+              'timezone', 'sentAt', 'recipientCount', 'stats', 'removeBranding', 'projectKey',
+              'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isSignedIn() && isValidId(campaignId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 29. Email Campaign Versions (Immutable Snapshots)
+    match /email_campaign_versions/{versionId} {
+      allow get: if isSignedIn() && isValidId(versionId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(versionId)
+        && isValidEmailCampaignVersion(incoming())
+        && incoming().id == versionId
+        && incoming().createdAt == request.time
+        && (isAdmin() || incoming().ownerUid == request.auth.uid);
+      allow update: if false;
+      allow delete: if isSignedIn() && isValidId(versionId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 30. Email Audience Lists Collection
+    match /email_lists/{listId} {
+      allow get: if isSignedIn() && isValidId(listId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(listId)
+        && isValidEmailList(incoming())
+        && incoming().id == listId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (isAdmin() || incoming().ownerUid == request.auth.uid);
+      allow update: if isSignedIn()
+        && isValidId(listId)
+        && isValidEmailList(incoming())
+        && incoming().id == existing().id
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            existing().ownerUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'description', 'doubleOptIn', 'defaultSenderEmail', 'status', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isSignedIn() && isValidId(listId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 31. Email Subscribers Collection (Strictly PII Isolated — Owner/Admin Only)
+    match /email_subscribers/{subscriberId} {
+      allow get: if isSignedIn() && isValidId(subscriberId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(subscriberId)
+        && isValidEmailSubscriber(incoming())
+        && incoming().id == subscriberId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (isAdmin() || incoming().ownerUid == request.auth.uid);
+      allow update: if isSignedIn()
+        && isValidId(subscriberId)
+        && isValidEmailSubscriber(incoming())
+        && incoming().id == existing().id
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            existing().ownerUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'email', 'firstName', 'lastName', 'status', 'listIds', 'tags', 'customFields',
+              'source', 'consentConfirmed', 'consentNote', 'unsubscribedAt', 'lastActivityAt', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isSignedIn() && isValidId(subscriberId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 32. Email Audience Segments Collection
+    match /email_segments/{segmentId} {
+      allow get: if isSignedIn() && isValidId(segmentId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(segmentId)
+        && isValidEmailSegment(incoming())
+        && incoming().id == segmentId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (isAdmin() || incoming().ownerUid == request.auth.uid);
+      allow update: if isSignedIn()
+        && isValidId(segmentId)
+        && isValidEmailSegment(incoming())
+        && incoming().id == existing().id
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            existing().ownerUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'description', 'matchType', 'rules', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isSignedIn() && isValidId(segmentId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 33. Custom Email Templates Collection
+    match /email_templates/{templateId} {
+      allow get: if isSignedIn() && isValidId(templateId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(templateId)
+        && isValidEmailTemplate(incoming())
+        && incoming().id == templateId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (isAdmin() || incoming().ownerUid == request.auth.uid);
+      allow update: if isSignedIn()
+        && isValidId(templateId)
+        && isValidEmailTemplate(incoming())
+        && incoming().id == existing().id
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            existing().ownerUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'category', 'description', 'subject', 'previewText', 'blocks', 'designSettings', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isSignedIn() && isValidId(templateId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 34. Email Automations Collection
+    match /email_automations/{automationId} {
+      allow get: if isSignedIn() && isValidId(automationId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(automationId)
+        && isValidEmailAutomation(incoming())
+        && incoming().id == automationId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (isAdmin() || incoming().ownerUid == request.auth.uid);
+      allow update: if isSignedIn()
+        && isValidId(automationId)
+        && isValidEmailAutomation(incoming())
+        && incoming().id == existing().id
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            existing().ownerUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'description', 'triggerType', 'targetListId', 'status',
+              'triggeredCount', 'sentCount', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isSignedIn() && isValidId(automationId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 35. Email Automation Steps Collection
+    match /email_automation_steps/{stepId} {
+      allow get: if isSignedIn() && isValidId(stepId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(stepId)
+        && isValidEmailAutomationStep(incoming())
+        && incoming().id == stepId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (isAdmin() || incoming().ownerUid == request.auth.uid);
+      allow update: if isSignedIn()
+        && isValidId(stepId)
+        && isValidEmailAutomationStep(incoming())
+        && incoming().id == existing().id
+        && incoming().automationId == existing().automationId
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            existing().ownerUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'stepOrder', 'actionType', 'delayMinutes', 'subject', 'templateId',
+              'tagValue', 'statusValue', 'blocks', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isSignedIn() && isValidId(stepId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 36. Durable Email Scheduled Jobs Collection
+    match /email_scheduled_jobs/{jobId} {
+      allow get: if isSignedIn() && isValidId(jobId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(jobId)
+        && isValidEmailScheduledJob(incoming())
+        && incoming().id == jobId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (isAdmin() || incoming().ownerUid == request.auth.uid);
+      allow update: if isSignedIn()
+        && isValidId(jobId)
+        && isValidEmailScheduledJob(incoming())
+        && incoming().id == existing().id
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().idempotencyKey == existing().idempotencyKey
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            existing().ownerUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'status', 'scheduledAt', 'timezone', 'attempts', 'processedCount',
+              'failedCount', 'lastError', 'startedAt', 'completedAt', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isSignedIn() && isValidId(jobId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 37. Email Delivery & Engagement Events (PII Isolated Read; Owner/Admin or Verified Campaign Webhook Create)
+    match /email_delivery_events/{eventId} {
+      allow get: if isSignedIn() && isValidId(eventId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isValidId(eventId)
+        && isValidEmailDeliveryEvent(incoming())
+        && incoming().id == eventId
+        && incoming().createdAt == request.time
+        && (
+          isAdmin()
+          || (isSignedIn() && incoming().ownerUid == request.auth.uid)
+          || (
+            exists(/databases/$(database)/documents/email_campaigns/$(incoming().campaignId))
+            && get(/databases/$(database)/documents/email_campaigns/$(incoming().campaignId)).data.ownerUid == incoming().ownerUid
+          )
+        );
+      allow update: if false;
+      allow delete: if isAdmin() && isValidId(eventId);
+    }
+
+    // 38. Global Email Suppressions (PII Isolated Read; Owner/Admin or Verified Unsubscribe/Bounce Create)
+    match /email_suppressions/{suppressionId} {
+      allow get: if isSignedIn() && isValidId(suppressionId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isValidId(suppressionId)
+        && isValidEmailSuppression(incoming())
+        && incoming().id == suppressionId
+        && incoming().createdAt == request.time
+        && (
+          isAdmin()
+          || (isSignedIn() && incoming().ownerUid == request.auth.uid)
+          || (
+            'campaignId' in incoming()
+            && isValidId(incoming().campaignId)
+            && incoming().reason in ['unsubscribed', 'hard_bounce', 'spam_complaint']
+            && exists(/databases/$(database)/documents/email_campaigns/$(incoming().campaignId))
+            && get(/databases/$(database)/documents/email_campaigns/$(incoming().campaignId)).data.ownerUid == incoming().ownerUid
+          )
+        );
+      allow update: if false;
+      allow delete: if isSignedIn() && isValidId(suppressionId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 39. Email Sender Domains Collection
+    match /email_sender_domains/{domainId} {
+      allow get: if isSignedIn() && isValidId(domainId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(domainId)
+        && isValidEmailSenderDomain(incoming())
+        && incoming().id == domainId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (isAdmin() || incoming().ownerUid == request.auth.uid);
+      allow update: if isSignedIn()
+        && isValidId(domainId)
+        && isValidEmailSenderDomain(incoming())
+        && incoming().id == existing().id
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            existing().ownerUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'resendDomainId', 'status', 'region', 'dnsRecords', 'lastCheckedAt', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isSignedIn() && isValidId(domainId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 40. Email Sender Settings Collection (1 doc per workspace ownerUid)
+    match /email_sender_settings/{ownerUid} {
+      allow get: if isSignedIn() && isValidId(ownerUid) && (isOwner(ownerUid) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isSignedIn()
+        && isValidId(ownerUid)
+        && isValidEmailSenderSettings(incoming())
+        && incoming().ownerUid == ownerUid
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (isOwner(ownerUid) && incoming().campaignSuspended == false)
+        );
+      allow update: if isSignedIn()
+        && isValidId(ownerUid)
+        && isValidEmailSenderSettings(incoming())
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            isOwner(ownerUid)
+            && incoming().campaignSuspended == existing().campaignSuspended
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'senderName', 'senderEmail', 'replyTo', 'companyName', 'companyWebsite',
+              'companyLogoUrl', 'companyAddress', 'defaultFooter', 'additionalIdentities',
+              'doubleOptInDefault', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isAdmin() && isValidId(ownerUid);
+    }
+
+    // 41. Monthly Email Campaign Usage Counters
+    match /email_campaign_usage/{usageId} {
+      allow get: if isSignedIn() && isValidId(usageId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(usageId)
+        && isValidEmailCampaignUsage(incoming())
+        && incoming().id == usageId
+        && incoming().updatedAt == request.time
+        && (isAdmin() || incoming().ownerUid == request.auth.uid);
+      allow update: if isSignedIn()
+        && isValidId(usageId)
+        && isValidEmailCampaignUsage(incoming())
+        && incoming().id == existing().id
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().monthKey == existing().monthKey
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            existing().ownerUid == request.auth.uid
+            && incoming().emailsSent >= existing().emailsSent
+            && incoming().campaignsSent >= existing().campaignsSent
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'emailsSent', 'campaignsSent', 'bounces', 'complaints', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isAdmin() && isValidId(usageId);
+    }
+
+    // 42. Resend Webhook Audit Events (Idempotent Ledger)
+    match /email_webhook_events/{eventId} {
+      allow get: if isSignedIn() && isValidId(eventId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isValidId(eventId)
+        && isValidEmailWebhookEvent(incoming())
+        && incoming().id == eventId
+        && incoming().createdAt == request.time
+        && (
+          isAdmin()
+          || (isSignedIn() && incoming().ownerUid == request.auth.uid)
+          || (
+            exists(/databases/$(database)/documents/email_campaigns/$(incoming().campaignId))
+            && get(/databases/$(database)/documents/email_campaigns/$(incoming().campaignId)).data.ownerUid == incoming().ownerUid
+          )
+        );
+      allow update: if false;
+      allow delete: if isAdmin() && isValidId(eventId);
     }
   }
 }

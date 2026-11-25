@@ -168,9 +168,13 @@
         "maxSubscribers": { "type": "number" },
         "maxShortLinks": { "type": "number" },
         "maxTeamSeats": { "type": "number" },
+        "maxWidgets": { "type": "number" },
         "features": { "type": "object" },
         "isActive": { "type": "boolean" },
         "isArchived": { "type": "boolean" },
+        "maxTeamSeats": { "type": "number" },
+        "maxWidgets": { "type": "number" },
+        "maxCampaignEmailsPerMonth": { "type": "number" },
         "sortOrder": { "type": "number" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
@@ -465,6 +469,430 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "ownerUid", "kind", "title", "summary", "config", "createdAt", "updatedAt"]
+    },
+    "Widget": {
+      "title": "Widget",
+      "description": "Phase 2 website component or business widget configuration, draft/published state, and domain access rules.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "publicId": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "projectKey": { "type": "string", "maxLength": 64 },
+        "name": { "type": "string", "maxLength": 140 },
+        "type": { "type": "string", "maxLength": 64 },
+        "group": { "type": "string", "enum": ["ui", "business"] },
+        "category": { "type": "string", "maxLength": 64 },
+        "status": { "type": "string", "enum": ["draft", "published", "disabled"] },
+        "version": { "type": "number" },
+        "publishedVersion": { "type": "number" },
+        "configuration": { "type": "object" },
+        "publishedConfiguration": { "type": "object" },
+        "domainRestrictionEnabled": { "type": "boolean" },
+        "allowedDomains": { "type": "array" },
+        "allowSubdomains": { "type": "boolean" },
+        "abuseFlagged": { "type": "boolean" },
+        "abuseReason": { "type": "string", "maxLength": 500 },
+        "publishedAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "publicId", "ownerUid", "name", "type", "group", "category", "status", "version", "publishedVersion", "configuration", "domainRestrictionEnabled", "allowedDomains", "allowSubdomains", "abuseFlagged", "abuseReason", "publishedAt", "createdAt", "updatedAt"]
+    },
+    "PublicWidget": {
+      "title": "PublicWidget",
+      "description": "Non-PII public projection of a published widget for embed script and hosted widget pages.",
+      "type": "object",
+      "properties": {
+        "publicId": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "widgetId": { "type": "number" },
+        "widgetDocId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "maxLength": 140 },
+        "type": { "type": "string", "maxLength": 64 },
+        "group": { "type": "string", "enum": ["ui", "business"] },
+        "category": { "type": "string", "maxLength": 64 },
+        "status": { "type": "string", "enum": ["draft", "published", "disabled"] },
+        "publishedVersion": { "type": "number" },
+        "configuration": { "type": "object" },
+        "domainRestrictionEnabled": { "type": "boolean" },
+        "allowedDomains": { "type": "array" },
+        "allowSubdomains": { "type": "boolean" },
+        "totalViews": { "type": "number" },
+        "totalClicks": { "type": "number" },
+        "lastLoadedAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["publicId", "widgetId", "widgetDocId", "ownerUid", "name", "type", "group", "category", "status", "publishedVersion", "configuration", "domainRestrictionEnabled", "allowedDomains", "allowSubdomains", "totalViews", "totalClicks", "lastLoadedAt", "createdAt", "updatedAt"]
+    },
+    "WidgetVersion": {
+      "title": "WidgetVersion",
+      "description": "Immutable version snapshot of a widget configuration for safe publishing and rollback.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "widgetId": { "type": "number" },
+        "widgetDocId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "publicId": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "version": { "type": "number" },
+        "label": { "type": "string", "maxLength": 160 },
+        "action": { "type": "string", "enum": ["publish", "draft_snapshot", "restore"] },
+        "configuration": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "widgetId", "widgetDocId", "publicId", "ownerUid", "version", "label", "action", "configuration", "createdAt"]
+    },
+    "WidgetDomain": {
+      "title": "WidgetDomain",
+      "description": "Permitted embed domain record with DNS verification token and status.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "widgetId": { "type": "number" },
+        "publicId": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "domain": { "type": "string", "maxLength": 160 },
+        "allowSubdomains": { "type": "boolean" },
+        "verified": { "type": "boolean" },
+        "verificationToken": { "type": "string", "maxLength": 80 },
+        "lastLoadedAt": { "type": "string", "maxLength": 64 },
+        "status": { "type": "string", "enum": ["active", "pending", "disabled"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerUid", "widgetId", "publicId", "domain", "allowSubdomains", "verified", "verificationToken", "lastLoadedAt", "status", "createdAt", "updatedAt"]
+    },
+    "WidgetDailyStat": {
+      "title": "WidgetDailyStat",
+      "description": "Privacy-conscious daily aggregated analytics counters per widget (prevents unbounded event writes).",
+      "type": "object",
+      "properties": {
+        "publicId": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "widgetId": { "type": "number" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "dateKey": { "type": "string", "maxLength": 16 },
+        "impressions": { "type": "number" },
+        "loads": { "type": "number" },
+        "uniqueVisitors": { "type": "number" },
+        "clicks": { "type": "number" },
+        "ctaClicks": { "type": "number" },
+        "popupOpens": { "type": "number" },
+        "popupCloses": { "type": "number" },
+        "consentAccepts": { "type": "number" },
+        "consentRejects": { "type": "number" },
+        "errors": { "type": "number" },
+        "desktopCount": { "type": "number" },
+        "tabletCount": { "type": "number" },
+        "mobileCount": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["publicId", "widgetId", "ownerUid", "dateKey", "impressions", "loads", "uniqueVisitors", "clicks", "ctaClicks", "popupOpens", "popupCloses", "consentAccepts", "consentRejects", "errors", "desktopCount", "tabletCount", "mobileCount", "updatedAt"]
+    },
+    "EmailCampaign": {
+      "title": "EmailCampaign",
+      "description": "Phase 3 newsletter, announcement, or promotional email campaign.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "projectKey": { "type": "string", "maxLength": 64 },
+        "name": { "type": "string", "maxLength": 160 },
+        "campaignType": { "type": "string", "enum": ["newsletter", "announcement", "promotional", "transactional_update"] },
+        "status": { "type": "string", "enum": ["draft", "scheduled", "sending", "sent", "paused", "canceled", "failed"] },
+        "subject": { "type": "string", "maxLength": 240 },
+        "previewText": { "type": "string", "maxLength": 300 },
+        "senderName": { "type": "string", "maxLength": 120 },
+        "senderEmail": { "type": "string", "maxLength": 254 },
+        "replyTo": { "type": "string", "maxLength": 254 },
+        "audienceType": { "type": "string", "enum": ["list", "segment", "all_subscribed"] },
+        "listIds": { "type": "array" },
+        "segmentId": { "type": "string", "maxLength": 128 },
+        "templateId": { "type": "string", "maxLength": 128 },
+        "blocks": { "type": "array" },
+        "designSettings": { "type": "object" },
+        "compiledHtml": { "type": "string", "maxLength": 200000 },
+        "compiledText": { "type": "string", "maxLength": 60000 },
+        "scheduledAt": { "type": "string", "maxLength": 64 },
+        "timezone": { "type": "string", "maxLength": 64 },
+        "sentAt": { "type": "string", "maxLength": 64 },
+        "recipientCount": { "type": "number" },
+        "stats": { "type": "object" },
+        "removeBranding": { "type": "boolean" },
+        "abuseSuspended": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerUid", "name", "campaignType", "status", "subject", "previewText", "senderName", "senderEmail", "replyTo", "audienceType", "listIds", "blocks", "designSettings", "recipientCount", "stats", "removeBranding", "abuseSuspended", "createdAt", "updatedAt"]
+    },
+    "EmailCampaignVersion": {
+      "title": "EmailCampaignVersion",
+      "description": "Immutable snapshot of an email campaign before send or manual save.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "campaignId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "version": { "type": "number" },
+        "subject": { "type": "string", "maxLength": 240 },
+        "blocks": { "type": "array" },
+        "designSettings": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "campaignId", "ownerUid", "version", "subject", "blocks", "designSettings", "createdAt"]
+    },
+    "EmailList": {
+      "title": "EmailList",
+      "description": "Audience subscriber list for Phase 3 Email Campaigns.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 500 },
+        "doubleOptIn": { "type": "boolean" },
+        "defaultSenderEmail": { "type": "string", "maxLength": 254 },
+        "status": { "type": "string", "enum": ["active", "archived"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerUid", "name", "description", "doubleOptIn", "status", "createdAt", "updatedAt"]
+    },
+    "EmailSubscriber": {
+      "title": "EmailSubscriber",
+      "description": "PII-isolated email subscriber with consent tracking, tags, custom fields, and list memberships.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "maxLength": 254 },
+        "firstName": { "type": "string", "maxLength": 100 },
+        "lastName": { "type": "string", "maxLength": 100 },
+        "status": { "type": "string", "enum": ["subscribed", "pending", "unsubscribed", "bounced", "complained", "suppressed"] },
+        "listIds": { "type": "array" },
+        "tags": { "type": "array" },
+        "customFields": { "type": "object" },
+        "source": { "type": "string", "maxLength": 80 },
+        "consentConfirmed": { "type": "boolean" },
+        "consentNote": { "type": "string", "maxLength": 240 },
+        "subscribedAt": { "type": "string", "maxLength": 64 },
+        "unsubscribedAt": { "type": "string", "maxLength": 64 },
+        "lastActivityAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerUid", "email", "firstName", "lastName", "status", "listIds", "tags", "customFields", "source", "consentConfirmed", "subscribedAt", "createdAt", "updatedAt"]
+    },
+    "EmailSegment": {
+      "title": "EmailSegment",
+      "description": "Reusable audience segment with dynamic filter conditions.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 400 },
+        "matchType": { "type": "string", "enum": ["all", "any"] },
+        "rules": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerUid", "name", "description", "matchType", "rules", "createdAt", "updatedAt"]
+    },
+    "EmailTemplate": {
+      "title": "EmailTemplate",
+      "description": "Reusable email campaign design template.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "maxLength": 120 },
+        "category": { "type": "string", "maxLength": 64 },
+        "description": { "type": "string", "maxLength": 400 },
+        "subject": { "type": "string", "maxLength": 240 },
+        "previewText": { "type": "string", "maxLength": 300 },
+        "blocks": { "type": "array" },
+        "designSettings": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerUid", "name", "category", "description", "subject", "previewText", "blocks", "designSettings", "createdAt", "updatedAt"]
+    },
+    "EmailAutomation": {
+      "title": "EmailAutomation",
+      "description": "Event-driven email automation workflow.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "maxLength": 140 },
+        "description": { "type": "string", "maxLength": 400 },
+        "triggerType": { "type": "string", "enum": ["new_subscriber", "subscriber_confirmed", "added_to_list", "new_customer", "product_announcement", "scheduled_newsletter"] },
+        "targetListId": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["active", "paused", "draft"] },
+        "triggeredCount": { "type": "number" },
+        "sentCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerUid", "name", "description", "triggerType", "status", "triggeredCount", "sentCount", "createdAt", "updatedAt"]
+    },
+    "EmailAutomationStep": {
+      "title": "EmailAutomationStep",
+      "description": "Ordered step inside an email automation sequence.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "automationId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "stepOrder": { "type": "number" },
+        "actionType": { "type": "string", "enum": ["send_welcome", "send_confirmation", "send_announcement", "send_followup", "add_tag", "update_status"] },
+        "delayMinutes": { "type": "number" },
+        "subject": { "type": "string", "maxLength": 240 },
+        "templateId": { "type": "string", "maxLength": 128 },
+        "tagValue": { "type": "string", "maxLength": 64 },
+        "statusValue": { "type": "string", "maxLength": 40 },
+        "blocks": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "automationId", "ownerUid", "stepOrder", "actionType", "delayMinutes", "subject", "createdAt", "updatedAt"]
+    },
+    "EmailScheduledJob": {
+      "title": "EmailScheduledJob",
+      "description": "Durable Firestore job record for scheduled campaigns and delayed automation steps.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "jobType": { "type": "string", "enum": ["campaign_send", "automation_step"] },
+        "campaignId": { "type": "string", "maxLength": 128 },
+        "automationId": { "type": "string", "maxLength": 128 },
+        "stepId": { "type": "string", "maxLength": 128 },
+        "subscriberEmail": { "type": "string", "maxLength": 254 },
+        "status": { "type": "string", "enum": ["queued", "processing", "completed", "failed", "canceled", "paused"] },
+        "scheduledAt": { "type": "string", "maxLength": 64 },
+        "timezone": { "type": "string", "maxLength": 64 },
+        "attempts": { "type": "number" },
+        "maxAttempts": { "type": "number" },
+        "idempotencyKey": { "type": "string", "maxLength": 128 },
+        "processedCount": { "type": "number" },
+        "failedCount": { "type": "number" },
+        "lastError": { "type": "string", "maxLength": 1000 },
+        "startedAt": { "type": "string", "maxLength": 64 },
+        "completedAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerUid", "jobType", "status", "scheduledAt", "timezone", "attempts", "maxAttempts", "idempotencyKey", "processedCount", "failedCount", "lastError", "createdAt", "updatedAt"]
+    },
+    "EmailDeliveryEvent": {
+      "title": "EmailDeliveryEvent",
+      "description": "Per-recipient email delivery and engagement event from Resend or dispatch engine.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "campaignId": { "type": "string", "maxLength": 128 },
+        "subscriberEmail": { "type": "string", "maxLength": 254 },
+        "providerMessageId": { "type": "string", "maxLength": 160 },
+        "eventType": { "type": "string", "enum": ["sent", "delivered", "opened", "clicked", "bounced", "complained", "unsubscribed", "failed"] },
+        "linkUrl": { "type": "string", "maxLength": 500 },
+        "errorMessage": { "type": "string", "maxLength": 600 },
+        "occurredAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerUid", "campaignId", "subscriberEmail", "providerMessageId", "eventType", "occurredAt", "createdAt"]
+    },
+    "EmailSuppression": {
+      "title": "EmailSuppression",
+      "description": "Global suppression list blocking marketing emails to unsubscribed, bounced, or complained addresses.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "maxLength": 254 },
+        "reason": { "type": "string", "enum": ["unsubscribed", "hard_bounce", "spam_complaint", "manual"] },
+        "source": { "type": "string", "maxLength": 80 },
+        "campaignId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerUid", "email", "reason", "source", "createdAt"]
+    },
+    "EmailSenderDomain": {
+      "title": "EmailSenderDomain",
+      "description": "Sender domain with real Resend verification status and SPF/DKIM/DMARC DNS records.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "domain": { "type": "string", "maxLength": 160 },
+        "resendDomainId": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["pending", "verified", "failed", "not_started"] },
+        "region": { "type": "string", "maxLength": 40 },
+        "dnsRecords": { "type": "array" },
+        "lastCheckedAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerUid", "domain", "status", "dnsRecords", "lastCheckedAt", "createdAt", "updatedAt"]
+    },
+    "EmailSenderSettings": {
+      "title": "EmailSenderSettings",
+      "description": "Workspace default sender identity, company address, logo, and compliance footer.",
+      "type": "object",
+      "properties": {
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "senderName": { "type": "string", "maxLength": 120 },
+        "senderEmail": { "type": "string", "maxLength": 254 },
+        "replyTo": { "type": "string", "maxLength": 254 },
+        "companyName": { "type": "string", "maxLength": 160 },
+        "companyWebsite": { "type": "string", "maxLength": 300 },
+        "companyLogoUrl": { "type": "string", "maxLength": 500 },
+        "companyAddress": { "type": "string", "maxLength": 300 },
+        "defaultFooter": { "type": "string", "maxLength": 600 },
+        "additionalIdentities": { "type": "array" },
+        "doubleOptInDefault": { "type": "boolean" },
+        "campaignSuspended": { "type": "boolean" },
+        "suspensionReason": { "type": "string", "maxLength": 400 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerUid", "senderName", "senderEmail", "replyTo", "companyName", "companyWebsite", "companyLogoUrl", "companyAddress", "defaultFooter", "doubleOptInDefault", "campaignSuspended", "updatedAt"]
+    },
+    "EmailCampaignUsage": {
+      "title": "EmailCampaignUsage",
+      "description": "Monthly campaign send volume tracking per workspace for server-side quota enforcement.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "monthKey": { "type": "string", "maxLength": 16 },
+        "emailsSent": { "type": "number" },
+        "campaignsSent": { "type": "number" },
+        "bounces": { "type": "number" },
+        "complaints": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerUid", "monthKey", "emailsSent", "campaignsSent", "bounces", "complaints", "updatedAt"]
+    },
+    "EmailWebhookEvent": {
+      "title": "EmailWebhookEvent",
+      "description": "Idempotent record of verified Resend webhook deliveries.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "campaignId": { "type": "string", "maxLength": 128 },
+        "provider": { "type": "string", "maxLength": 32 },
+        "eventType": { "type": "string", "maxLength": 64 },
+        "providerMessageId": { "type": "string", "maxLength": 160 },
+        "recipientEmail": { "type": "string", "maxLength": 254 },
+        "status": { "type": "string", "enum": ["processed", "ignored", "failed"] },
+        "receivedAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerUid", "campaignId", "provider", "eventType", "providerMessageId", "recipientEmail", "status", "receivedAt", "createdAt"]
     }
   },
   "firestore": {
@@ -555,6 +983,86 @@
     "/utilityRecords/{recordId}": {
       "schema": { "$ref": "#/entities/UtilityRecord" },
       "description": "Saved QR Code and PDF utility generation history."
+    },
+    "/widgets/{widgetId}": {
+      "schema": { "$ref": "#/entities/Widget" },
+      "description": "Customer website components and business widgets."
+    },
+    "/publicWidgets/{publicId}": {
+      "schema": { "$ref": "#/entities/PublicWidget" },
+      "description": "Public non-PII published widget configurations for embed scripts and hosted pages."
+    },
+    "/widgetVersions/{versionId}": {
+      "schema": { "$ref": "#/entities/WidgetVersion" },
+      "description": "Immutable widget configuration snapshots for safe publishing and rollback."
+    },
+    "/widgetDomains/{domainId}": {
+      "schema": { "$ref": "#/entities/WidgetDomain" },
+      "description": "Permitted domains and DNS verification records for published widgets."
+    },
+    "/widgetDailyStats/{statId}": {
+      "schema": { "$ref": "#/entities/WidgetDailyStat" },
+      "description": "Daily aggregated privacy-conscious widget analytics counters."
+    },
+    "/email_campaigns/{campaignId}": {
+      "schema": { "$ref": "#/entities/EmailCampaign" },
+      "description": "Customer email campaigns (newsletters, announcements, promotional)."
+    },
+    "/email_campaign_versions/{versionId}": {
+      "schema": { "$ref": "#/entities/EmailCampaignVersion" },
+      "description": "Immutable snapshots of email campaign designs."
+    },
+    "/email_lists/{listId}": {
+      "schema": { "$ref": "#/entities/EmailList" },
+      "description": "Audience subscriber lists."
+    },
+    "/email_subscribers/{subscriberId}": {
+      "schema": { "$ref": "#/entities/EmailSubscriber" },
+      "description": "PII-isolated subscribers scoped by ownerUid."
+    },
+    "/email_segments/{segmentId}": {
+      "schema": { "$ref": "#/entities/EmailSegment" },
+      "description": "Reusable audience filter segments."
+    },
+    "/email_templates/{templateId}": {
+      "schema": { "$ref": "#/entities/EmailTemplate" },
+      "description": "Custom reusable email templates."
+    },
+    "/email_automations/{automationId}": {
+      "schema": { "$ref": "#/entities/EmailAutomation" },
+      "description": "Email automation workflows."
+    },
+    "/email_automation_steps/{stepId}": {
+      "schema": { "$ref": "#/entities/EmailAutomationStep" },
+      "description": "Steps inside email automation sequences."
+    },
+    "/email_scheduled_jobs/{jobId}": {
+      "schema": { "$ref": "#/entities/EmailScheduledJob" },
+      "description": "Durable Firestore scheduled send and automation jobs."
+    },
+    "/email_delivery_events/{eventId}": {
+      "schema": { "$ref": "#/entities/EmailDeliveryEvent" },
+      "description": "Provider-reported delivery, open, click, bounce, complaint, and unsubscribe events."
+    },
+    "/email_suppressions/{suppressionId}": {
+      "schema": { "$ref": "#/entities/EmailSuppression" },
+      "description": "Global suppression list blocking marketing sends to unsubscribed/bounced/complained emails."
+    },
+    "/email_sender_domains/{domainId}": {
+      "schema": { "$ref": "#/entities/EmailSenderDomain" },
+      "description": "Resend sender domains and DNS verification records."
+    },
+    "/email_sender_settings/{ownerUid}": {
+      "schema": { "$ref": "#/entities/EmailSenderSettings" },
+      "description": "Default sender identity, company address, and compliance footer per workspace."
+    },
+    "/email_campaign_usage/{usageId}": {
+      "schema": { "$ref": "#/entities/EmailCampaignUsage" },
+      "description": "Monthly campaign volume counters per workspace."
+    },
+    "/email_webhook_events/{eventId}": {
+      "schema": { "$ref": "#/entities/EmailWebhookEvent" },
+      "description": "Idempotent Resend webhook audit events."
     }
   }
 }

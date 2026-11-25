@@ -330,6 +330,11 @@ export const BillingView: React.FC<{ highlightPlanSlug?: string }> = ({ highligh
       locked: !cp?.features.newsletterApi,
     },
     {
+      label: 'Published Widgets',
+      used: devSummary?.publishedWidgetsCount ?? 0,
+      limit: cp?.maxWidgets ?? 2,
+    },
+    {
       label: 'Signed Webhooks',
       used: devSummary?.webhooksCount ?? 0,
       limit: cp?.maxWebhooks ?? 0,
@@ -399,6 +404,95 @@ export const BillingView: React.FC<{ highlightPlanSlug?: string }> = ({ highligh
           label: 'White-Label (Remove BrosDev Branding)',
           render: (p) =>
             p.features.removeBranding ? (
+              <Check className="w-4 h-4 text-[#16A34A] mx-auto" />
+            ) : (
+              <Lock className="w-3.5 h-3.5 text-[#A3A3A3] mx-auto" />
+            ),
+        },
+      ],
+    },
+    {
+      group: 'Website Components & Widgets (Phase 2)',
+      rows: [
+        {
+          label: 'Published Website Components & Business Widgets',
+          render: (p) => <span className="font-mono font-semibold">{p.maxWidgets ?? 2} live</span>,
+        },
+        {
+          label: 'Shadow DOM Embed, Hosted Pages & Analytics',
+          render: () => <Check className="w-4 h-4 text-[#16A34A] mx-auto" />,
+        },
+        {
+          label: 'Domain Allowlist Restrictions & Subdomain Control',
+          render: (p) =>
+            p.features.widgetDomainRestrictions ? (
+              <Check className="w-4 h-4 text-[#16A34A] mx-auto" />
+            ) : (
+              <Lock className="w-3.5 h-3.5 text-[#A3A3A3] mx-auto" />
+            ),
+        },
+        {
+          label: 'Validated Scoped Custom CSS Editor',
+          render: (p) =>
+            p.features.widgetCustomCss ? (
+              <Check className="w-4 h-4 text-[#16A34A] mx-auto" />
+            ) : (
+              <Lock className="w-3.5 h-3.5 text-[#A3A3A3] mx-auto" />
+            ),
+        },
+      ],
+    },
+    {
+      group: 'Newsletter & Email Campaign Studio (Phase 3)',
+      rows: [
+        {
+          label: 'Monthly Campaign Emails (Resend Delivery)',
+          render: (p) => (
+            <span className="font-mono font-semibold">
+              {(p.maxCampaignEmailsPerMonth ?? 500).toLocaleString()} / mo
+            </span>
+          ),
+        },
+        {
+          label: 'Custom Reusable Email Templates',
+          render: (p) =>
+            p.features.campaignCustomTemplates ? (
+              <Check className="w-4 h-4 text-[#16A34A] mx-auto" />
+            ) : (
+              <Lock className="w-3.5 h-3.5 text-[#A3A3A3] mx-auto" />
+            ),
+        },
+        {
+          label: 'Campaign Scheduling (Durable Queue)',
+          render: (p) =>
+            p.features.campaignScheduling ? (
+              <Check className="w-4 h-4 text-[#16A34A] mx-auto" />
+            ) : (
+              <Lock className="w-3.5 h-3.5 text-[#A3A3A3] mx-auto" />
+            ),
+        },
+        {
+          label: 'Dynamic Subscriber Segmentation Rules',
+          render: (p) =>
+            p.features.campaignSegmentation ? (
+              <Check className="w-4 h-4 text-[#16A34A] mx-auto" />
+            ) : (
+              <Lock className="w-3.5 h-3.5 text-[#A3A3A3] mx-auto" />
+            ),
+        },
+        {
+          label: 'Automated Email Sequences & Triggers',
+          render: (p) =>
+            p.features.campaignAutomation ? (
+              <Check className="w-4 h-4 text-[#16A34A] mx-auto" />
+            ) : (
+              <Lock className="w-3.5 h-3.5 text-[#A3A3A3] mx-auto" />
+            ),
+        },
+        {
+          label: 'Multiple Custom Sender Identities',
+          render: (p) =>
+            p.features.multipleSenderIdentities ? (
               <Check className="w-4 h-4 text-[#16A34A] mx-auto" />
             ) : (
               <Lock className="w-3.5 h-3.5 text-[#A3A3A3] mx-auto" />
@@ -674,15 +768,23 @@ export const BillingView: React.FC<{ highlightPlanSlug?: string }> = ({ highligh
                   <li className="flex items-center gap-2">
                     <Check className="w-3.5 h-3.5 text-[#16A34A] shrink-0" />
                     <span className="tabular-nums">
-                      <strong>{plan.maxForms}</strong> forms ·{' '}
-                      <strong>{plan.maxSubmissionsPerMonth.toLocaleString()}</strong> subs/mo
+                      <strong>{plan.maxWidgets ?? 2}</strong> published widgets ·{' '}
+                      <strong>{plan.maxForms}</strong> forms
                     </span>
                   </li>
                   <li className="flex items-center gap-2">
                     <Check className="w-3.5 h-3.5 text-[#16A34A] shrink-0" />
                     <span className="tabular-nums">
-                      <strong>{plan.maxProjects}</strong> projects ·{' '}
-                      <strong>{plan.maxApiKeys}</strong> API keys
+                      <strong>{plan.maxSubmissionsPerMonth.toLocaleString()}</strong> subs/mo ·{' '}
+                      <strong>{plan.maxProjects}</strong> projects
+                    </span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <Check className="w-3.5 h-3.5 text-[#16A34A] shrink-0" />
+                    <span className="tabular-nums">
+                      <strong>{(plan.maxCampaignEmailsPerMonth ?? 500).toLocaleString()}</strong>{' '}
+                      campaign emails/mo ·{' '}
+                      {plan.features.campaignAutomation ? 'Automations' : plan.features.campaignScheduling ? 'Scheduling' : 'Templates'}
                     </span>
                   </li>
                   <li className="flex items-center gap-2">

@@ -107,6 +107,71 @@ X-Razorpay-Signature: <hmac_sha256_hex>`,
   "event": "subscription.charged"
 }`,
     },
+    {
+      id: 'campaign-send',
+      method: 'POST',
+      path: '/api/campaigns/{id}/send',
+      title: 'Send Email Campaign via Resend (Phase 3)',
+      description:
+        'Authenticated server-side campaign dispatcher. Enforces plan monthly quota, filters global suppressions, attaches RFC 8058 List-Unsubscribe one-click headers, uses per-recipient Idempotency-Key headers, and logs delivery events.',
+      sample: `curl -X POST "${baseUrl}/api/campaigns/cmp_abc123/send" \\
+  -H "Authorization: Bearer <FIREBASE_ID_TOKEN>" \\
+  -H "Content-Type: application/json" \\
+  -d '{"subject":"Product Update","html":"...","recipients":[{"email":"user@example.com"}]}'`,
+      response: `{
+  "ok": true,
+  "sentCount": 42,
+  "failedCount": 0,
+  "suppressedCount": 2
+}`,
+    },
+    {
+      id: 'resend-webhook',
+      method: 'POST',
+      path: '/api/webhooks/resend',
+      title: 'Resend Delivery Events Webhook (Svix HMAC-SHA256)',
+      description:
+        'Verifies svix-id, svix-timestamp, and svix-signature against RESEND_WEBHOOK_SECRET, deduplicates event IDs, records delivered/opened/clicked/bounced/complained telemetry, and auto-suppresses hard bounces & spam complaints.',
+      sample: `POST ${baseUrl}/api/webhooks/resend
+svix-id: msg_2a9b...
+svix-timestamp: 1764050001
+svix-signature: v1,<base64-hmac-sha256>`,
+      response: `{
+  "ok": true,
+  "eventType": "delivered",
+  "deduplicated": false
+}`,
+    },
+    {
+      id: 'campaign-unsubscribe',
+      method: 'POST',
+      path: '/api/campaigns/unsubscribe',
+      title: 'Signed One-Click Unsubscribe Endpoint (RFC 8058)',
+      description:
+        'Verifies HMAC-SHA256 signed unsubscribe tokens from email footers or mail client List-Unsubscribe-Post headers and writes an immediate suppression record.',
+      sample: `curl -X POST "${baseUrl}/api/campaigns/unsubscribe?token=<SIGNED_TOKEN>" \\
+  -H "Content-Type: application/x-www-form-urlencoded" \\
+  -d "List-Unsubscribe=One-Click"`,
+      response: `{
+  "ok": true,
+  "unsubscribed": true,
+  "email": "user@example.com"
+}`,
+    },
+    {
+      id: 'campaign-cron',
+      method: 'GET',
+      path: '/api/cron/campaigns',
+      title: 'Scheduled Campaigns & Automations Cron Runner',
+      description:
+        'Protected by CRON_SECRET Bearer header. Triggered every 5 minutes by Vercel Cron to inspect due scheduled campaign jobs and queued automation sequence steps.',
+      sample: `curl -X GET "${baseUrl}/api/cron/campaigns" \\
+  -H "Authorization: Bearer <CRON_SECRET>"`,
+      response: `{
+  "ok": true,
+  "checkedAt": "2026-11-25T14:00:00.000Z"
+}`,
+    },
   ];
 
   const downloadOpenApiSpec = () => {
@@ -161,6 +226,44 @@ X-Razorpay-Signature: <hmac_sha256_hex>`,
           post: {
             summary: 'Verify Razorpay HMAC webhook signature',
             responses: { '200': { description: 'Signature verified' }, '401': { description: 'Invalid signature' } },
+          },
+        },
+        '/api/campaigns/{id}/test': {
+          post: {
+            summary: 'Send test email for a campaign via Resend',
+            parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+            responses: { '200': { description: 'Test email dispatched' }, '401': { description: 'Unauthorized' } },
+          },
+        },
+        '/api/campaigns/{id}/send': {
+          post: {
+            summary: 'Dispatch email campaign to eligible subscribers via Resend',
+            parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+            responses: { '200': { description: 'Dispatch summary' }, '403': { description: 'Quota or suspension check failed' } },
+          },
+        },
+        '/api/campaigns/domains': {
+          post: {
+            summary: 'Create, verify, or list Resend sender domains and DNS records',
+            responses: { '200': { description: 'Domain records returned' }, '401': { description: 'Unauthorized' } },
+          },
+        },
+        '/api/campaigns/unsubscribe': {
+          post: {
+            summary: 'Verify signed unsubscribe token and suppress recipient',
+            responses: { '200': { description: 'Recipient unsubscribed' }, '400': { description: 'Invalid token' } },
+          },
+        },
+        '/api/webhooks/resend': {
+          post: {
+            summary: 'Receive and verify Resend/Svix delivery webhook events',
+            responses: { '200': { description: 'Event processed' }, '401': { description: 'Invalid Svix signature' } },
+          },
+        },
+        '/api/cron/campaigns': {
+          get: {
+            summary: 'Vercel Cron processor for scheduled campaigns & automation jobs',
+            responses: { '200': { description: 'Cron check complete' }, '401': { description: 'Invalid CRON_SECRET' } },
           },
         },
       },

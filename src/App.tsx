@@ -4,6 +4,8 @@ import { AuthGate } from './components/AuthGate';
 import { CustomerPortal } from './components/customer/CustomerPortal';
 import { AdminPortal } from './components/admin/AdminPortal';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
+import { HostedWidgetPage } from './widget-renderer/HostedWidgetPage';
+import { UnsubscribePage } from './campaigns/UnsubscribePage';
 
 function AppShell() {
   const { isAuthenticated, workspace, loading } = useAuth();
@@ -24,6 +26,17 @@ function AppShell() {
     }
   };
 
+  // Public One-Click / Confirmation Unsubscribe Page (/unsubscribe?token=...)
+  if (pathname === '/unsubscribe' || pathname === '/unsubscribe/') {
+    return <UnsubscribePage />;
+  }
+
+  // Public Hosted Widget Pages (/w/:publicId) render without requiring login
+  const hostedWidgetMatch = pathname.match(/^\/w\/([a-zA-Z0-9_-]{4,64})\/?$/);
+  if (hostedWidgetMatch) {
+    return <HostedWidgetPage publicId={hostedWidgetMatch[1]} />;
+  }
+
   const isAdminRoute = pathname.startsWith('/admin');
 
   if (loading) {
@@ -33,7 +46,7 @@ function AppShell() {
           <div className="w-6 h-6 rounded bg-[#A90706] flex items-center justify-center text-white font-bold text-xs">
             B
           </div>
-          <span>Loading BrosDev Forms...</span>
+          <span>Loading BrosDev Services...</span>
         </div>
       </div>
     );
