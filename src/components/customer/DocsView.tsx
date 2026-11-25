@@ -164,7 +164,7 @@ svix-signature: v1,<base64-hmac-sha256>`,
       path: '/api/cron/campaigns',
       title: 'Scheduled Campaigns & Automations Cron Runner',
       description:
-        'Protected by CRON_SECRET Bearer header. Triggered every 5 minutes by Vercel Cron to inspect due scheduled campaign jobs and queued automation sequence steps.',
+        'Protected by CRON_SECRET Bearer header. Triggered daily at 09:00 UTC by Vercel Cron (Hobby compatible), or invoke more frequently via an external scheduler with your CRON_SECRET token.',
       sample: `curl -X GET "${baseUrl}/api/cron/campaigns" \\
   -H "Authorization: Bearer <CRON_SECRET>"`,
       response: `{

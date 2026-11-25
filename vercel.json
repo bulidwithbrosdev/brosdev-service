@@ -35,7 +35,7 @@
   "crons": [
     {
       "path": "/api/cron/campaigns",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 9 * * *"
     }
   ]
 }

@@ -819,7 +819,7 @@ export function CampaignsHubView({
                   <div className="px-4 py-3 border-b border-[#E5E5E5] flex items-center justify-between">
                     <div>
                       <h3 className="text-xs font-bold text-[#111111]">
-                        Durable Job Queue (Vercel Cron · Every 5 min)
+                        Durable Job Queue (Vercel Cron · Daily at 09:00 UTC)
                       </h3>
                       <p className="text-[11px] text-[#737373]">
                         Scheduled campaign sends and automation sequence steps persisted in Firestore.
