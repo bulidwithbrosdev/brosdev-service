@@ -1691,3 +1691,397 @@ export async function handleEmbedScript(req, res, explicitFormKey) {
   }
 })();`);
 }
+
+// ---------------- HMAC-SHA256 SIGNED WEBHOOK DISPATCHER ----------------
+
+export function signWebhookPayload(secret, timestamp, rawBody) {
+  const sig = crypto
+    .createHmac('sha256', String(secret || ''))
+    .update(`${timestamp}.${rawBody}`, 'utf8')
+    .digest('hex');
+  return `t=${timestamp},v1=${sig}`;
+}
+
+export async function handleWebhookDispatch(req, res) {
+  applyCors(req, res, false);
+  if (req.method === 'OPTIONS') {
+    res.statusCode = 204;
+    return res.end();
+  }
+  if (req.method !== 'POST') {
+    return sendJson(res, 405, { error: 'Method not allowed. Use POST.' });
+  }
+
+  const caller = await verifyFirebaseToken(req);
+  if (!caller) {
+    return sendJson(res, 401, { error: 'Authentication required to dispatch webhooks.' });
+  }
+
+  let body;
+  try {
+    body = await readBody(req);
+  } catch (err) {
+    return sendJson(res, 400, { error: err?.message || 'Invalid JSON body.' });
+  }
+
+  const targetUrl = String(body?.url || '').trim();
+  const signingSecret = String(body?.signingSecret || '').trim();
+  const eventType = sanitizeHeaderText(body?.eventType || 'form.submission.created', 'form.submission.created').slice(0, 80);
+  const deliveryId = sanitizeHeaderText(
+    body?.deliveryId || `whd_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+    `whd_${Date.now()}`
+  ).slice(0, 64);
+
+  if (!isSafeWebhookUrl(targetUrl)) {
+    return sendJson(res, 400, {
+      error: 'Webhook URL must be a valid public HTTPS endpoint (localhost and private network addresses are blocked).',
+    });
+  }
+  if (!signingSecret || signingSecret.length < 8) {
+    return sendJson(res, 400, { error: 'A valid webhook signing secret is required.' });
+  }
+
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const envelope = {
+    id: deliveryId,
+    event: eventType,
+    timestamp: new Date().toISOString(),
+    data: body?.payload && typeof body.payload === 'object' ? body.payload : { ping: true },
+  };
+  const rawBody = JSON.stringify(envelope);
+  const signature = signWebhookPayload(signingSecret, timestamp, rawBody);
+
+  const startedAt = Date.now();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  let httpStatus = 0;
+  let ok = false;
+  let responseSnippet = '';
+
+  try {
+    const resp = await fetch(targetUrl, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'BrosDev-Webhooks/1.0',
+        'X-BrosDev-Event': eventType,
+        'X-BrosDev-Delivery-Id': deliveryId,
+        'X-BrosDev-Timestamp': timestamp,
+        'X-BrosDev-Signature': signature,
+      },
+      body: rawBody,
+      signal: controller.signal,
+    });
+    httpStatus = resp.status;
+    ok = resp.status >= 200 && resp.status < 300;
+    const text = await resp.text().catch(() => '');
+    responseSnippet = text.slice(0, 480) || resp.statusText || (ok ? 'OK' : `HTTP ${resp.status}`);
+  } catch (err) {
+    ok = false;
+    httpStatus = 0;
+    responseSnippet =
+      err?.name === 'AbortError'
+        ? 'Request timed out after 5000ms.'
+        : String(err?.message || 'Network delivery failure.').slice(0, 480);
+  } finally {
+    clearTimeout(timer);
+  }
+
+  const durationMs = Math.max(1, Date.now() - startedAt);
+  return sendJson(res, 200, {
+    ok,
+    deliveryId,
+    eventType,
+    httpStatus,
+    durationMs,
+    signature,
+    timestamp,
+    responseSnippet,
+    payloadSnippet: rawBody.slice(0, 1900),
+  });
+}
+
+// ---------------- PUBLIC NEWSLETTER SUBSCRIPTION API ----------------
+
+async function firestoreGetPublicNewsletterList(listKey) {
+  const url = `${FIRESTORE_API_BASE}/publicNewsletterLists/${encodeURIComponent(listKey)}`;
+  const resp = await fetch(url, {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+  });
+  if (resp.status === 404) return { status: 'not_found' };
+  if (resp.status === 403) return { status: 'forbidden' };
+  if (!resp.ok) {
+    const errBody = await resp.json().catch(() => ({}));
+    return { status: 'error', message: errBody?.error?.message || `Firestore error (${resp.status})` };
+  }
+  const docJson = await resp.json().catch(() => null);
+  if (!docJson?.fields) return { status: 'not_found' };
+  return { status: 'ok', list: fromFirestoreDoc(docJson) };
+}
+
+async function firestoreCreateNewsletterSubscriber(subDocId, docData) {
+  const fields = {};
+  for (const [k, v] of Object.entries(docData)) {
+    if (v !== undefined) fields[k] = toFirestoreValue(v);
+  }
+  const resp = await fetch(`${FIRESTORE_API_BASE}:commit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      writes: [
+        {
+          update: {
+            name: `${FIRESTORE_DOC_ROOT}/newsletterSubscribers/${subDocId}`,
+            fields,
+          },
+          currentDocument: { exists: false },
+          updateTransforms: [
+            { fieldPath: 'createdAt', setToServerValue: 'REQUEST_TIME' },
+            { fieldPath: 'updatedAt', setToServerValue: 'REQUEST_TIME' },
+          ],
+        },
+      ],
+    }),
+  });
+  if (!resp.ok) {
+    const errJson = await resp.json().catch(() => ({}));
+    return { ok: false, error: errJson?.error?.message || `Firestore commit failed (${resp.status})` };
+  }
+  return { ok: true };
+}
+
+export async function handlePublicNewsletterSubscribe(req, res, explicitListKey) {
+  applyCors(req, res, true);
+  if (req.method === 'OPTIONS') {
+    res.statusCode = 204;
+    return res.end();
+  }
+  if (req.method !== 'POST') {
+    return sendJson(res, 405, { ok: false, error: 'Method not allowed. Use POST.' });
+  }
+
+  const listKey = String(explicitListKey || req.query?.listKey || '').trim();
+  if (!/^[a-zA-Z0-9_-]{3,64}$/.test(listKey)) {
+    return sendJson(res, 400, { ok: false, error: 'Invalid newsletter list key.' });
+  }
+
+  const accept = String(req.headers.accept || '');
+  const contentType = String(req.headers['content-type'] || '');
+  const wantsJson = accept.includes('application/json') || contentType.includes('application/json');
+
+  let fields = {};
+  try {
+    const parsed = await readBodyWithFiles(req);
+    fields = parsed.fields || {};
+  } catch (err) {
+    const msg = err?.message || 'Unable to parse subscription payload.';
+    return wantsJson ? sendJson(res, 400, { ok: false, error: msg }) : sendHtmlPage(res, 400, 'Invalid Request', 'Subscription Failed', msg);
+  }
+
+  const email = String(fields.email || '').trim().toLowerCase();
+  const name = String(fields.name || fields.full_name || '').trim().slice(0, 120);
+  const redirectUrl = String(fields._redirect || fields.redirectUrl || '').trim();
+
+  if (!isValidEmail(email)) {
+    const msg = 'Please enter a valid email address.';
+    return wantsJson ? sendJson(res, 400, { ok: false, error: msg }) : sendHtmlPage(res, 400, 'Invalid Email', 'Invalid Email Address', msg);
+  }
+
+  const lookup = await firestoreGetPublicNewsletterList(listKey);
+  if (lookup.status === 'not_found' || lookup.status === 'forbidden' || !lookup.list) {
+    const msg = 'Newsletter list not found or currently paused.';
+    return wantsJson ? sendJson(res, 404, { ok: false, error: msg }) : sendHtmlPage(res, 404, 'Not Found', 'List Unavailable', msg);
+  }
+  if (lookup.status !== 'ok') {
+    const msg = lookup.message || 'Unable to verify newsletter list.';
+    return wantsJson ? sendJson(res, 502, { ok: false, error: msg }) : sendHtmlPage(res, 502, 'Service Error', 'Temporary Error', msg);
+  }
+
+  const list = lookup.list;
+  if (list.status !== 'active') {
+    const msg = 'This newsletter list is currently paused.';
+    return wantsJson ? sendJson(res, 403, { ok: false, error: msg }) : sendHtmlPage(res, 403, 'Paused', 'Subscriptions Paused', msg);
+  }
+
+  // Deterministic doc ID per (listKey, email) prevents duplicate subscribers cleanly
+  const dedupHash = sha256Hex(`${listKey}:${email}`).slice(0, 16);
+  const subDocId = `nsub_${listKey.slice(0, 16)}_${dedupHash}`;
+  const subId = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+  const unsubscribeToken = `unsub_${crypto.randomBytes(12).toString('hex')}`;
+
+  const created = await firestoreCreateNewsletterSubscriber(subDocId, {
+    id: subId,
+    ownerUid: String(list.ownerUid),
+    listId: Number(list.listId || 0),
+    listKey,
+    email,
+    name,
+    status: 'subscribed',
+    source: wantsJson ? 'api' : 'html_form',
+    unsubscribeToken,
+  });
+
+  // If document already exists, treat gracefully as already subscribed
+  const alreadySubscribed = !created.ok && /ALREADY_EXISTS/i.test(String(created.error || ''));
+  if (!created.ok && !alreadySubscribed) {
+    const msg = created.error || 'Failed to save subscriber.';
+    return wantsJson ? sendJson(res, 500, { ok: false, error: msg }) : sendHtmlPage(res, 500, 'Error', 'Subscription Error', msg);
+  }
+
+  const message = alreadySubscribed
+    ? `You are already subscribed to ${list.name}.`
+    : `Subscribed to ${list.name} successfully.`;
+
+  if (wantsJson) {
+    return sendJson(res, alreadySubscribed ? 200 : 201, {
+      ok: true,
+      alreadySubscribed,
+      listKey,
+      email,
+      message,
+    });
+  }
+
+  if (redirectUrl && isSafeHttpUrl(redirectUrl)) {
+    res.statusCode = 303;
+    res.setHeader('Location', redirectUrl);
+    return res.end();
+  }
+
+  return sendHtmlPage(
+    res,
+    200,
+    'Subscribed',
+    'Subscription Confirmed',
+    message,
+    `<p style="margin:14px 0 0;font-size:12px;color:#737373;">List: ${escapeHtml(list.name)}</p>`
+  );
+}
+
+// ---------------- PUBLIC URL SHORTENER REDIRECT API ----------------
+
+export async function handleShortLinkRedirect(req, res, explicitSlug) {
+  const slug = String(explicitSlug || req.query?.slug || '').trim();
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(slug)) {
+    return sendHtmlPage(res, 404, 'Link Not Found', 'Short Link Not Found', 'The requested short link does not exist.');
+  }
+
+  const docUrl = `${FIRESTORE_API_BASE}/shortLinks/${encodeURIComponent(slug)}`;
+  const resp = await fetch(docUrl, { method: 'GET', headers: { Accept: 'application/json' } });
+  if (resp.status === 404 || resp.status === 403) {
+    return sendHtmlPage(res, 404, 'Link Not Found', 'Short Link Unavailable', 'This short link is inactive or does not exist.');
+  }
+  if (!resp.ok) {
+    return sendHtmlPage(res, 502, 'Error', 'Redirect Error', 'Unable to resolve short link right now.');
+  }
+
+  const docJson = await resp.json().catch(() => null);
+  if (!docJson?.fields) {
+    return sendHtmlPage(res, 404, 'Link Not Found', 'Short Link Not Found', 'This short link does not exist.');
+  }
+
+  const link = fromFirestoreDoc(docJson);
+  if (!link.isActive) {
+    return sendHtmlPage(res, 410, 'Link Paused', 'Short Link Paused', 'This short link has been paused by its owner.');
+  }
+  if (link.expiresAt && new Date(link.expiresAt).getTime() < Date.now()) {
+    return sendHtmlPage(res, 410, 'Link Expired', 'Short Link Expired', 'This short link has expired.');
+  }
+  if (!isSafeHttpUrl(link.targetUrl)) {
+    return sendHtmlPage(res, 400, 'Invalid Target', 'Invalid Destination URL', 'This link destination is not a valid HTTP/HTTPS URL.');
+  }
+
+  // Best-effort atomic click increment (matches firestore.rules public clicks + 1 rule)
+  const nextClicks = Number(link.clicks || 0) + 1;
+  try {
+    await fetch(`${FIRESTORE_API_BASE}:commit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        writes: [
+          {
+            update: {
+              name: `${FIRESTORE_DOC_ROOT}/shortLinks/${slug}`,
+              fields: {
+                clicks: toFirestoreValue(nextClicks),
+              },
+            },
+            updateMask: { fieldPaths: ['clicks'] },
+            updateTransforms: [{ fieldPath: 'updatedAt', setToServerValue: 'REQUEST_TIME' }],
+          },
+        ],
+      }),
+    });
+  } catch {
+    // Do not block redirect if analytics increment fails
+  }
+
+  res.statusCode = 302;
+  res.setHeader('Location', link.targetUrl);
+  res.setHeader('Cache-Control', 'no-store');
+  return res.end();
+}
+
+// ---------------- RAZORPAY WEBHOOK SIGNATURE VERIFICATION ----------------
+
+export function verifyRazorpaySignature(rawPayload, signatureHeader, secret) {
+  const sig = String(signatureHeader || '').trim();
+  const key = String(secret || '').trim();
+  if (!sig || !key) return false;
+  const expected = crypto.createHmac('sha256', key).update(String(rawPayload || ''), 'utf8').digest('hex');
+  return timingSafeHexEqual(expected, sig);
+}
+
+export async function handleRazorpayWebhook(req, res) {
+  applyCors(req, res, false);
+  if (req.method === 'OPTIONS') {
+    res.statusCode = 204;
+    return res.end();
+  }
+  if (req.method !== 'POST') {
+    return sendJson(res, 405, { error: 'Method not allowed. Use POST.' });
+  }
+
+  const webhookSecret = String(process.env.RAZORPAY_WEBHOOK_SECRET || '').trim();
+  if (!webhookSecret) {
+    return sendJson(res, 503, {
+      error: 'RAZORPAY_WEBHOOK_SECRET is not configured on the server. BrosDev Pay built-in checkout remains active.',
+    });
+  }
+
+  let rawBody = '';
+  try {
+    if (typeof req.body === 'string') {
+      rawBody = req.body;
+    } else if (req.body && typeof req.body === 'object') {
+      rawBody = JSON.stringify(req.body);
+    } else {
+      const buf = await readRawBuffer(req);
+      rawBody = buf.toString('utf8');
+    }
+  } catch {
+    return sendJson(res, 400, { error: 'Unable to read webhook payload.' });
+  }
+
+  const signature = String(req.headers['x-razorpay-signature'] || '');
+  if (!verifyRazorpaySignature(rawBody, signature, webhookSecret)) {
+    return sendJson(res, 401, { error: 'Invalid Razorpay webhook signature.' });
+  }
+
+  let eventPayload = {};
+  try {
+    eventPayload = JSON.parse(rawBody || '{}');
+  } catch {
+    return sendJson(res, 400, { error: 'Invalid JSON payload.' });
+  }
+
+  return sendJson(res, 200, {
+    ok: true,
+    verified: true,
+    event: String(eventPayload?.event || 'unknown'),
+    receivedAt: new Date().toISOString(),
+  });
+}
+

@@ -3,10 +3,14 @@ import express, { type Request, type Response } from 'express';
 import {
   handleEmbedScript,
   handleHealth,
+  handlePublicNewsletterSubscribe,
   handlePublicSubmit,
+  handleRazorpayWebhook,
   handleResendSend,
   handleResendTestConnection,
   handleSealRouting,
+  handleShortLinkRedirect,
+  handleWebhookDispatch,
 } from '../../api/_lib.js';
 
 export function createApiApp() {
@@ -30,6 +34,30 @@ export function createApiApp() {
 
   app.all('/api/resend/send', (req: Request, res: Response) => {
     void handleResendSend(req, res);
+  });
+
+  app.all('/api/webhooks/dispatch', (req: Request, res: Response) => {
+    void handleWebhookDispatch(req, res);
+  });
+
+  app.all('/api/newsletter/:listKey/subscribe', (req: Request, res: Response) => {
+    void handlePublicNewsletterSubscribe(req, res, req.params.listKey);
+  });
+
+  app.all('/api/newsletter/:listKey', (req: Request, res: Response) => {
+    void handlePublicNewsletterSubscribe(req, res, req.params.listKey);
+  });
+
+  app.all('/api/billing/razorpay/webhook', (req: Request, res: Response) => {
+    void handleRazorpayWebhook(req, res);
+  });
+
+  app.get('/api/r/:slug', (req: Request, res: Response) => {
+    void handleShortLinkRedirect(req, res, req.params.slug);
+  });
+
+  app.get('/r/:slug', (req: Request, res: Response) => {
+    void handleShortLinkRedirect(req, res, req.params.slug);
   });
 
   app.all('/api/submit/:formKey', (req: Request, res: Response) => {

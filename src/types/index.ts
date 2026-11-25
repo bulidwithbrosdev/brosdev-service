@@ -103,6 +103,11 @@ export interface PlanFeatures {
   teamMembers: boolean;
   prioritySupport: boolean;
   advancedAnalytics: boolean;
+  newsletterApi: boolean;
+  pdfGenerator: boolean;
+  customShortSlugs: boolean;
+  svgQrExport: boolean;
+  scopedApiKeys: boolean;
 }
 
 export interface PlanRecord {
@@ -119,6 +124,13 @@ export interface PlanRecord {
   maxEmailsPerMonth: number;
   maxApiRequestsPerMin: number;
   maxStorageMb: number;
+  maxProjects: number;
+  maxApiKeys: number;
+  maxWebhooks: number;
+  maxNewsletterLists: number;
+  maxSubscribers: number;
+  maxShortLinks: number;
+  maxTeamSeats: number;
   features: PlanFeatures;
   isActive: boolean;
   isArchived: boolean;
@@ -216,6 +228,13 @@ export interface WorkspaceMe {
     maxEmails: number;
     maxApiRequestsPerMin: number;
     maxStorageMb: number;
+    maxProjects: number;
+    maxApiKeys: number;
+    maxWebhooks: number;
+    maxNewsletterLists: number;
+    maxSubscribers: number;
+    maxShortLinks: number;
+    maxTeamSeats: number;
   };
   platformEmailSender: {
     sendingDomain: string;
@@ -260,4 +279,154 @@ export interface TeamWorkspacePayload {
   members: TeamMemberRecord[];
   incomingInvites: TeamMemberRecord[];
 }
+
+export type DeveloperProductId =
+  | 'forms'
+  | 'email'
+  | 'webhooks'
+  | 'newsletter'
+  | 'qr_generator'
+  | 'url_shortener'
+  | 'pdf_generator';
+
+export interface ProjectRecord {
+  id: number;
+  docId: string;
+  projectKey: string;
+  ownerUid: string;
+  name: string;
+  description: string;
+  allowedDomains: string[];
+  verifiedDomains: string[];
+  verificationToken: string;
+  enabledProducts: DeveloperProductId[];
+  status: 'active' | 'archived';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type WebhookEventType =
+  | 'form.submission.created'
+  | 'form.submission.updated'
+  | 'newsletter.subscriber.created'
+  | 'link.clicked';
+
+export interface WebhookRecord {
+  id: number;
+  docId: string;
+  ownerUid: string;
+  projectKey: string;
+  name: string;
+  url: string;
+  events: WebhookEventType[];
+  signingSecret: string;
+  isActive: boolean;
+  lastDeliveryStatus: 'idle' | 'succeeded' | 'failed';
+  lastDeliveryAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WebhookDeliveryRecord {
+  id: number;
+  docId: string;
+  deliveryId: string;
+  ownerUid: string;
+  webhookId: number;
+  webhookName: string;
+  targetUrl: string;
+  eventType: string;
+  status: 'succeeded' | 'failed';
+  httpStatus: number;
+  durationMs: number;
+  attemptCount: number;
+  signature: string;
+  responseSnippet: string;
+  payloadSnippet: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ApiKeyRecord {
+  id: number;
+  docId: string;
+  ownerUid: string;
+  projectKey: string;
+  name: string;
+  keyPrefix: string;
+  permissions: string[];
+  products: DeveloperProductId[];
+  status: 'active' | 'revoked';
+  lastUsedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NewsletterListRecord {
+  id: number;
+  docId: string;
+  listKey: string;
+  ownerUid: string;
+  projectKey: string;
+  name: string;
+  description: string;
+  doubleOptIn: boolean;
+  welcomeEmailEnabled: boolean;
+  status: 'active' | 'paused';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NewsletterSubscriberRecord {
+  id: number;
+  docId: string;
+  ownerUid: string;
+  listId: number;
+  listKey: string;
+  email: string;
+  name: string;
+  status: 'subscribed' | 'unsubscribed' | 'pending';
+  source: string;
+  unsubscribeToken: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ShortLinkRecord {
+  id: number;
+  slug: string;
+  ownerUid: string;
+  title: string;
+  targetUrl: string;
+  clicks: number;
+  isActive: boolean;
+  expiresAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UtilityRecord {
+  id: number;
+  docId: string;
+  ownerUid: string;
+  kind: 'qr' | 'pdf';
+  title: string;
+  summary: string;
+  config: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DevServicesSummary {
+  projectsCount: number;
+  webhooksCount: number;
+  webhookDeliveriesCount: number;
+  apiKeysCount: number;
+  newsletterListsCount: number;
+  subscribersCount: number;
+  shortLinksCount: number;
+  shortLinkClicks: number;
+  utilityRecordsCount: number;
+}
+
 

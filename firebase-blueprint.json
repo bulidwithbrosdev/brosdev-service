@@ -161,6 +161,13 @@
         "maxEmailsPerMonth": { "type": "number" },
         "maxApiRequestsPerMin": { "type": "number" },
         "maxStorageMb": { "type": "number" },
+        "maxProjects": { "type": "number" },
+        "maxApiKeys": { "type": "number" },
+        "maxWebhooks": { "type": "number" },
+        "maxNewsletterLists": { "type": "number" },
+        "maxSubscribers": { "type": "number" },
+        "maxShortLinks": { "type": "number" },
+        "maxTeamSeats": { "type": "number" },
         "features": { "type": "object" },
         "isActive": { "type": "boolean" },
         "isArchived": { "type": "boolean" },
@@ -287,6 +294,177 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "ownerUid", "accountId", "memberEmail", "memberName", "role", "status", "invitedByEmail", "inviteToken", "createdAt", "updatedAt"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "Developer workspace project with allowed website domains, DNS verification, and enabled products.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "projectKey": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 500 },
+        "allowedDomains": { "type": "array" },
+        "verifiedDomains": { "type": "array" },
+        "verificationToken": { "type": "string", "maxLength": 80 },
+        "enabledProducts": { "type": "array" },
+        "status": { "type": "string", "enum": ["active", "archived"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "projectKey", "ownerUid", "name", "description", "allowedDomains", "verifiedDomains", "verificationToken", "enabledProducts", "status", "createdAt", "updatedAt"]
+    },
+    "Webhook": {
+      "title": "Webhook",
+      "description": "Customer HTTPS webhook subscription with HMAC-SHA256 signing secret.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "projectKey": { "type": "string", "maxLength": 64 },
+        "name": { "type": "string", "maxLength": 120 },
+        "url": { "type": "string", "maxLength": 500 },
+        "events": { "type": "array" },
+        "signingSecret": { "type": "string", "maxLength": 128 },
+        "isActive": { "type": "boolean" },
+        "lastDeliveryStatus": { "type": "string", "enum": ["idle", "succeeded", "failed"] },
+        "lastDeliveryAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerUid", "name", "url", "events", "signingSecret", "isActive", "lastDeliveryStatus", "createdAt", "updatedAt"]
+    },
+    "WebhookDelivery": {
+      "title": "WebhookDelivery",
+      "description": "Durable webhook dispatch record with HTTP response status, signature, and retry count.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "deliveryId": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "webhookId": { "type": "number" },
+        "webhookName": { "type": "string", "maxLength": 120 },
+        "targetUrl": { "type": "string", "maxLength": 500 },
+        "eventType": { "type": "string", "maxLength": 80 },
+        "status": { "type": "string", "enum": ["succeeded", "failed"] },
+        "httpStatus": { "type": "number" },
+        "durationMs": { "type": "number" },
+        "attemptCount": { "type": "number" },
+        "signature": { "type": "string", "maxLength": 200 },
+        "responseSnippet": { "type": "string", "maxLength": 500 },
+        "payloadSnippet": { "type": "string", "maxLength": 2000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "deliveryId", "ownerUid", "webhookId", "webhookName", "targetUrl", "eventType", "status", "httpStatus", "durationMs", "attemptCount", "signature", "responseSnippet", "payloadSnippet", "createdAt", "updatedAt"]
+    },
+    "ApiKey": {
+      "title": "ApiKey",
+      "description": "Hashed project/workspace API key metadata (raw secret is shown once at creation and never stored).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "projectKey": { "type": "string", "maxLength": 64 },
+        "name": { "type": "string", "maxLength": 120 },
+        "keyPrefix": { "type": "string", "maxLength": 32 },
+        "keyHash": { "type": "string", "maxLength": 128 },
+        "permissions": { "type": "array" },
+        "products": { "type": "array" },
+        "status": { "type": "string", "enum": ["active", "revoked"] },
+        "lastUsedAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerUid", "name", "keyPrefix", "keyHash", "permissions", "products", "status", "createdAt", "updatedAt"]
+    },
+    "NewsletterList": {
+      "title": "NewsletterList",
+      "description": "Subscriber list configuration for the Newsletter Subscription API.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "listKey": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "projectKey": { "type": "string", "maxLength": 64 },
+        "name": { "type": "string", "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 500 },
+        "doubleOptIn": { "type": "boolean" },
+        "welcomeEmailEnabled": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["active", "paused"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "listKey", "ownerUid", "name", "description", "doubleOptIn", "welcomeEmailEnabled", "status", "createdAt", "updatedAt"]
+    },
+    "PublicNewsletterList": {
+      "title": "PublicNewsletterList",
+      "description": "Non-PII public projection of an active newsletter list for external subscribe endpoints.",
+      "type": "object",
+      "properties": {
+        "listKey": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "listId": { "type": "number" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "maxLength": 120 },
+        "status": { "type": "string", "enum": ["active", "paused"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["listKey", "listId", "ownerUid", "name", "status", "createdAt", "updatedAt"]
+    },
+    "NewsletterSubscriber": {
+      "title": "NewsletterSubscriber",
+      "description": "Individual newsletter subscriber record scoped by ownerUid and listKey.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "listId": { "type": "number" },
+        "listKey": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "format": "email", "maxLength": 254 },
+        "name": { "type": "string", "maxLength": 120 },
+        "status": { "type": "string", "enum": ["subscribed", "unsubscribed", "pending"] },
+        "source": { "type": "string", "maxLength": 64 },
+        "unsubscribeToken": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerUid", "listId", "listKey", "email", "name", "status", "source", "unsubscribeToken", "createdAt", "updatedAt"]
+    },
+    "ShortLink": {
+      "title": "ShortLink",
+      "description": "URL Shortener redirect record with click counter, active state, and optional expiry.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "slug": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "maxLength": 140 },
+        "targetUrl": { "type": "string", "maxLength": 1000 },
+        "clicks": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "expiresAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "slug", "ownerUid", "title", "targetUrl", "clicks", "isActive", "expiresAt", "createdAt", "updatedAt"]
+    },
+    "UtilityRecord": {
+      "title": "UtilityRecord",
+      "description": "Saved QR Code or PDF Generator utility asset history.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "ownerUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "kind": { "type": "string", "enum": ["qr", "pdf"] },
+        "title": { "type": "string", "maxLength": 140 },
+        "summary": { "type": "string", "maxLength": 400 },
+        "config": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerUid", "kind", "title", "summary", "config", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -341,6 +519,42 @@
     "/teamMembers/{memberId}": {
       "schema": { "$ref": "#/entities/TeamMember" },
       "description": "Business plan team collaborators scoped by workspace ownerUid."
+    },
+    "/projects/{projectId}": {
+      "schema": { "$ref": "#/entities/Project" },
+      "description": "Developer workspace projects with domains and enabled products."
+    },
+    "/webhooks/{webhookId}": {
+      "schema": { "$ref": "#/entities/Webhook" },
+      "description": "Signed HTTPS webhook subscriptions."
+    },
+    "/webhookDeliveries/{deliveryId}": {
+      "schema": { "$ref": "#/entities/WebhookDelivery" },
+      "description": "Webhook delivery execution history and retry audit records."
+    },
+    "/apiKeys/{keyId}": {
+      "schema": { "$ref": "#/entities/ApiKey" },
+      "description": "Hashed project API keys (never stores plaintext secrets)."
+    },
+    "/newsletterLists/{listId}": {
+      "schema": { "$ref": "#/entities/NewsletterList" },
+      "description": "Customer newsletter lists."
+    },
+    "/publicNewsletterLists/{listKey}": {
+      "schema": { "$ref": "#/entities/PublicNewsletterList" },
+      "description": "Public non-PII projection of active newsletter lists."
+    },
+    "/newsletterSubscribers/{subId}": {
+      "schema": { "$ref": "#/entities/NewsletterSubscriber" },
+      "description": "Newsletter subscribers scoped by ownerUid."
+    },
+    "/shortLinks/{slug}": {
+      "schema": { "$ref": "#/entities/ShortLink" },
+      "description": "URL Shortener redirect mappings keyed by slug."
+    },
+    "/utilityRecords/{recordId}": {
+      "schema": { "$ref": "#/entities/UtilityRecord" },
+      "description": "Saved QR Code and PDF utility generation history."
     }
   }
 }

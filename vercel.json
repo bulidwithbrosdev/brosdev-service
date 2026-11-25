@@ -12,6 +12,18 @@
       "destination": "/api/embed/:formKey"
     },
     {
+      "source": "/r/:slug",
+      "destination": "/api/r/:slug"
+    },
+    {
+      "source": "/api/newsletter/:listKey/subscribe",
+      "destination": "/api/newsletter/:listKey"
+    },
+    {
+      "source": "/api/billing/razorpay/webhook",
+      "destination": "/api/billing/razorpay-webhook"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

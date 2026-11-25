@@ -13,7 +13,8 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { apiRequest } from '../../lib/api';
-import { InvoiceDetailRecord, PlanRecord } from '../../types';
+import { getDevServicesSummary } from '../../lib/devServicesApi';
+import { DevServicesSummary, InvoiceDetailRecord, PlanRecord } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { InvoiceModal } from '../shared/InvoiceModal';
 
@@ -101,6 +102,7 @@ function detectBrandLabel(input: string): string {
 export const BillingView: React.FC<{ highlightPlanSlug?: string }> = ({ highlightPlanSlug }) => {
   const { workspace, refreshWorkspace } = useAuth();
   const [data, setData] = useState<BillingPayload | null>(null);
+  const [devSummary, setDevSummary] = useState<DevServicesSummary | null>(null);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   const [busyPlanId, setBusyPlanId] = useState<number | null>(null);
   const [notice, setNotice] = useState<{ ok: boolean; text: string; invoiceId?: number } | null>(
@@ -134,8 +136,12 @@ export const BillingView: React.FC<{ highlightPlanSlug?: string }> = ({ highligh
   } | null>(null);
 
   const load = async () => {
-    const res = await apiRequest<BillingPayload>('/api/billing');
+    const [res, summary] = await Promise.all([
+      apiRequest<BillingPayload>('/api/billing'),
+      getDevServicesSummary().catch(() => null),
+    ]);
     setData(res);
+    setDevSummary(summary);
   };
 
   useEffect(() => {
@@ -270,7 +276,7 @@ export const BillingView: React.FC<{ highlightPlanSlug?: string }> = ({ highligh
   if (!data) {
     return (
       <div className="bg-white border border-[#E5E5E5] rounded-lg p-10 text-center text-sm text-[#737373]">
-        Loading billing and subscription usage...
+        Loading plans, entitlements, and workspace usage...
       </div>
     );
   }
@@ -284,16 +290,242 @@ export const BillingView: React.FC<{ highlightPlanSlug?: string }> = ({ highligh
     : '0.00';
 
   const brandLabel = detectBrandLabel(cardNumber);
+  const cp = data.currentPlan;
+
+  const usageMeters = [
+    {
+      label: 'Forms Created',
+      used: data.currentFormCount,
+      limit: cp?.maxForms ?? 2,
+    },
+    {
+      label: 'Submissions / Mo',
+      used: data.usage?.submissionsCount ?? 0,
+      limit: cp?.maxSubmissionsPerMonth ?? 100,
+    },
+    {
+      label: 'Emails Sent / Mo',
+      used: data.usage?.emailsSentCount ?? 0,
+      limit: cp?.maxEmailsPerMonth ?? 100,
+    },
+    {
+      label: 'Projects & Domains',
+      used: devSummary?.projectsCount ?? 0,
+      limit: cp?.maxProjects ?? 1,
+    },
+    {
+      label: 'Scoped API Keys',
+      used: devSummary?.apiKeysCount ?? 0,
+      limit: cp?.maxApiKeys ?? 1,
+    },
+    {
+      label: 'Short Links',
+      used: devSummary?.shortLinksCount ?? 0,
+      limit: cp?.maxShortLinks ?? 5,
+    },
+    {
+      label: 'Newsletter Lists',
+      used: devSummary?.newsletterListsCount ?? 0,
+      limit: cp?.maxNewsletterLists ?? 0,
+      locked: !cp?.features.newsletterApi,
+    },
+    {
+      label: 'Signed Webhooks',
+      used: devSummary?.webhooksCount ?? 0,
+      limit: cp?.maxWebhooks ?? 0,
+      locked: !cp?.features.webhooks,
+    },
+  ];
+
+  const comparisonGroups: Array<{
+    group: string;
+    rows: Array<{
+      label: string;
+      render: (plan: PlanRecord) => React.ReactNode;
+    }>;
+  }> = [
+    {
+      group: 'Core Forms & Email Routing',
+      rows: [
+        {
+          label: 'Active Forms',
+          render: (p) => <span className="font-mono font-semibold">{p.maxForms}</span>,
+        },
+        {
+          label: 'Monthly Submissions & Resend Emails',
+          render: (p) => (
+            <span className="font-mono font-semibold">
+              {p.maxSubmissionsPerMonth.toLocaleString()} / mo
+            </span>
+          ),
+        },
+        {
+          label: 'Advanced Builder (15 fields, validation, redirects, allowlist)',
+          render: (p) =>
+            p.features.advancedBuilder ? (
+              <Check className="w-4 h-4 text-[#16A34A] mx-auto" />
+            ) : (
+              <Lock className="w-3.5 h-3.5 text-[#A3A3A3] mx-auto" />
+            ),
+        },
+        {
+          label: 'JavaScript Fetch & Drop-in Embed Widget',
+          render: (p) =>
+            p.features.jsIntegration ? (
+              <Check className="w-4 h-4 text-[#16A34A] mx-auto" />
+            ) : (
+              <Lock className="w-3.5 h-3.5 text-[#A3A3A3] mx-auto" />
+            ),
+        },
+        {
+          label: 'Custom Sender Display Name & Submitter Auto-Reply',
+          render: (p) =>
+            p.features.customEmailTemplates ? (
+              <Check className="w-4 h-4 text-[#16A34A] mx-auto" />
+            ) : (
+              <Lock className="w-3.5 h-3.5 text-[#A3A3A3] mx-auto" />
+            ),
+        },
+        {
+          label: 'Multiple Email Recipients (up to 20 per form)',
+          render: (p) =>
+            p.features.multipleRecipients ? (
+              <Check className="w-4 h-4 text-[#16A34A] mx-auto" />
+            ) : (
+              <Lock className="w-3.5 h-3.5 text-[#A3A3A3] mx-auto" />
+            ),
+        },
+        {
+          label: 'White-Label (Remove BrosDev Branding)',
+          render: (p) =>
+            p.features.removeBranding ? (
+              <Check className="w-4 h-4 text-[#16A34A] mx-auto" />
+            ) : (
+              <Lock className="w-3.5 h-3.5 text-[#A3A3A3] mx-auto" />
+            ),
+        },
+      ],
+    },
+    {
+      group: 'Developer Services & APIs',
+      rows: [
+        {
+          label: 'Projects & Verified Website Domains',
+          render: (p) => <span className="font-mono font-semibold">{p.maxProjects}</span>,
+        },
+        {
+          label: 'Workspace & Project API Keys',
+          render: (p) => (
+            <span className="font-mono font-semibold">
+              {p.maxApiKeys} {p.features.scopedApiKeys ? '(Scoped + Rotate)' : '(Basic)'}
+            </span>
+          ),
+        },
+        {
+          label: 'Newsletter Subscription API (Lists / Subscribers)',
+          render: (p) =>
+            p.features.newsletterApi ? (
+              <span className="font-mono font-semibold">
+                {p.maxNewsletterLists} / {p.maxSubscribers.toLocaleString()}
+              </span>
+            ) : (
+              <Lock className="w-3.5 h-3.5 text-[#A3A3A3] mx-auto" />
+            ),
+        },
+        {
+          label: 'HMAC-SHA256 Signed Webhook Endpoints & Retries',
+          render: (p) =>
+            p.features.webhooks ? (
+              <span className="font-mono font-semibold">{p.maxWebhooks} endpoints</span>
+            ) : (
+              <Lock className="w-3.5 h-3.5 text-[#A3A3A3] mx-auto" />
+            ),
+        },
+        {
+          label: 'API Rate Limit',
+          render: (p) => (
+            <span className="font-mono text-[#525252]">{p.maxApiRequestsPerMin} req/min</span>
+          ),
+        },
+      ],
+    },
+    {
+      group: 'Developer Utilities',
+      rows: [
+        {
+          label: 'QR Code Generator',
+          render: (p) => (
+            <span className="text-xs font-semibold text-[#111111]">
+              {p.features.svgQrExport ? 'PNG + Vector SVG' : 'PNG Only'}
+            </span>
+          ),
+        },
+        {
+          label: 'URL Shortener (/r/:slug) Links',
+          render: (p) => (
+            <span className="font-mono font-semibold">
+              {p.maxShortLinks} {p.features.customShortSlugs ? '(Custom + Expiry)' : '(Auto)'}
+            </span>
+          ),
+        },
+        {
+          label: 'PDF Document Generator (Invoice / Report / Summary)',
+          render: (p) =>
+            p.features.pdfGenerator ? (
+              <Check className="w-4 h-4 text-[#16A34A] mx-auto" />
+            ) : (
+              <Lock className="w-3.5 h-3.5 text-[#A3A3A3] mx-auto" />
+            ),
+        },
+      ],
+    },
+    {
+      group: 'Analytics, Export & Organization',
+      rows: [
+        {
+          label: 'CSV Exports (Submissions & Newsletter) + Date Filters',
+          render: (p) =>
+            p.features.advancedAnalytics ? (
+              <Check className="w-4 h-4 text-[#16A34A] mx-auto" />
+            ) : (
+              <Lock className="w-3.5 h-3.5 text-[#A3A3A3] mx-auto" />
+            ),
+        },
+        {
+          label: 'Team Collaboration (Admin / Editor / Viewer RBAC)',
+          render: (p) =>
+            p.features.teamMembers ? (
+              <span className="font-mono font-semibold text-[#111111]">
+                Up to {p.maxTeamSeats} seats
+              </span>
+            ) : (
+              <Lock className="w-3.5 h-3.5 text-[#A3A3A3] mx-auto" />
+            ),
+        },
+        {
+          label: 'Priority Support',
+          render: (p) =>
+            p.features.prioritySupport ? (
+              <Check className="w-4 h-4 text-[#16A34A] mx-auto" />
+            ) : (
+              <Lock className="w-3.5 h-3.5 text-[#A3A3A3] mx-auto" />
+            ),
+        },
+      ],
+    },
+  ];
 
   return (
     <div className="space-y-6">
-      {/* Current Plan & Usage Summary */}
+      {/* Current Plan & Full Developer Services Quota Overview */}
       <div className="bg-white border border-[#E5E5E5] rounded-lg p-6">
         <div className="flex flex-wrap items-center justify-between gap-4 pb-5 border-b border-[#E5E5E5]">
           <div>
-            <div className="text-xs text-[#525252] font-medium">Current Subscription</div>
+            <div className="text-xs text-[#525252] font-medium">
+              BrosDev Developer Services · Active Subscription
+            </div>
             <div className="text-xl font-bold text-[#111111] mt-1">
-              {data.currentPlan?.name || 'Free'} Plan ·{' '}
+              {cp?.name || 'Free'} Plan ·{' '}
               <span className="text-sm font-semibold capitalize text-[#16A34A]">
                 {data.subscription?.status || 'active'}
               </span>
@@ -309,7 +541,7 @@ export const BillingView: React.FC<{ highlightPlanSlug?: string }> = ({ highligh
           <div className="flex items-center gap-1 p-1 bg-[#F5F5F5] rounded-lg">
             <button
               onClick={() => setBillingCycle('monthly')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md cursor-pointer ${
+              className={`px-3.5 py-1.5 text-xs font-semibold rounded-md cursor-pointer ${
                 billingCycle === 'monthly' ? 'bg-white text-[#111111] shadow-xs' : 'text-[#525252]'
               }`}
             >
@@ -317,43 +549,53 @@ export const BillingView: React.FC<{ highlightPlanSlug?: string }> = ({ highligh
             </button>
             <button
               onClick={() => setBillingCycle('yearly')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md cursor-pointer ${
+              className={`px-3.5 py-1.5 text-xs font-semibold rounded-md cursor-pointer inline-flex items-center gap-1.5 ${
                 billingCycle === 'yearly' ? 'bg-white text-[#111111] shadow-xs' : 'text-[#525252]'
               }`}
             >
-              Yearly
+              <span>Yearly</span>
+              <span className="text-[10px] font-bold text-[#16A34A]">Save 17%</span>
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 pt-5">
-          <div>
-            <div className="text-xs text-[#525252]">Forms Created</div>
-            <div className="text-lg font-bold font-mono tabular-nums text-[#111111] mt-1">
-              {data.currentFormCount} / {data.currentPlan?.maxForms ?? 2}
-            </div>
-          </div>
-          <div>
-            <div className="text-xs text-[#525252]">Submissions (This Month)</div>
-            <div className="text-lg font-bold font-mono tabular-nums text-[#111111] mt-1">
-              {(data.usage?.submissionsCount ?? 0).toLocaleString()} /{' '}
-              {(data.currentPlan?.maxSubmissionsPerMonth ?? 100).toLocaleString()}
-            </div>
-          </div>
-          <div>
-            <div className="text-xs text-[#525252]">Emails Sent (This Month)</div>
-            <div className="text-lg font-bold font-mono tabular-nums text-[#111111] mt-1">
-              {(data.usage?.emailsSentCount ?? 0).toLocaleString()} /{' '}
-              {(data.currentPlan?.maxEmailsPerMonth ?? 100).toLocaleString()}
-            </div>
-          </div>
-          <div>
-            <div className="text-xs text-[#525252]">Storage Used</div>
-            <div className="text-lg font-bold font-mono tabular-nums text-[#111111] mt-1">
-              {((data.usage?.storageBytes ?? 0) / (1024 * 1024)).toFixed(2)} MB /{' '}
-              {data.currentPlan?.maxStorageMb ?? 25} MB
-            </div>
-          </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-5">
+          {usageMeters.map((m) => {
+            const pct = m.limit > 0 ? Math.min(100, Math.round((m.used / m.limit) * 100)) : 0;
+            const atLimit = !m.locked && m.limit > 0 && m.used >= m.limit;
+            return (
+              <div
+                key={m.label}
+                className="rounded-md border border-[#EFEFEF] bg-[#FAFAFA] p-3.5 space-y-2"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-medium text-[#525252]">{m.label}</span>
+                  {m.locked && <Lock className="w-3 h-3 text-[#A3A3A3]" />}
+                </div>
+                <div className="font-mono text-sm font-bold tabular-nums text-[#111111]">
+                  {m.locked ? (
+                    <span className="text-xs font-semibold text-[#737373]">Locked</span>
+                  ) : (
+                    <>
+                      {m.used.toLocaleString()} / {m.limit.toLocaleString()}
+                    </>
+                  )}
+                </div>
+                <div className="h-1.5 w-full rounded-full bg-[#E5E5E5] overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${
+                      m.locked
+                        ? 'bg-[#D4D4D4]'
+                        : atLimit
+                          ? 'bg-[#A90706]'
+                          : 'bg-[#111111]'
+                    }`}
+                    style={{ width: m.locked ? '0%' : `${pct}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -379,11 +621,14 @@ export const BillingView: React.FC<{ highlightPlanSlug?: string }> = ({ highligh
         </div>
       )}
 
-      {/* Plans Grid */}
+      {/* Redeveloped 4-Tier Plan Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         {data.plans.map((plan) => {
-          const isCurrent = data.currentPlan?.id === plan.id;
-          const isHighlighted = Boolean(highlightPlanSlug && plan.slug === highlightPlanSlug && !isCurrent);
+          const isCurrent = cp?.id === plan.id;
+          const isHighlighted = Boolean(
+            (highlightPlanSlug && plan.slug === highlightPlanSlug && !isCurrent) ||
+              (!highlightPlanSlug && plan.slug === 'professional' && !isCurrent)
+          );
           const price =
             billingCycle === 'yearly'
               ? Math.round(plan.yearlyPriceCents / 100)
@@ -393,22 +638,29 @@ export const BillingView: React.FC<{ highlightPlanSlug?: string }> = ({ highligh
               key={plan.id}
               className={`bg-white border rounded-lg p-6 flex flex-col justify-between transition-shadow ${
                 isCurrent
-                  ? 'border-[#A90706]'
+                  ? 'border-[#A90706] ring-1 ring-[#A90706]/20'
                   : isHighlighted
-                    ? 'border-[#111111] ring-2 ring-[#111111]/15'
+                    ? 'border-[#111111] ring-2 ring-[#111111]/10'
                     : 'border-[#E5E5E5]'
               }`}
             >
               <div>
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-xs text-[#737373]">{plan.audienceLabel || 'SaaS Tier'}</div>
-                  {isHighlighted && (
+                  {isCurrent ? (
                     <span className="text-[10px] font-bold uppercase tracking-wider text-[#A90706]">
+                      Current
+                    </span>
+                  ) : isHighlighted ? (
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#111111]">
                       Recommended
                     </span>
-                  )}
+                  ) : null}
                 </div>
                 <h3 className="text-lg font-bold text-[#111111] mt-1">{plan.name}</h3>
+                <p className="text-xs text-[#525252] mt-1 leading-relaxed min-h-[36px]">
+                  {plan.description}
+                </p>
                 <div className="mt-4 flex items-baseline gap-1">
                   <span className="text-3xl font-bold font-mono tabular-nums text-[#111111]">
                     ${price}
@@ -418,21 +670,48 @@ export const BillingView: React.FC<{ highlightPlanSlug?: string }> = ({ highligh
                   </span>
                 </div>
 
-                <ul className="mt-5 pt-5 border-t border-[#EFEFEF] space-y-2.5 text-xs text-[#333333]">
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-[#16A34A] shrink-0" />
-                    <span className="tabular-nums">Up to {plan.maxForms} forms</span>
-                  </li>
+                <ul className="mt-5 pt-5 border-t border-[#EFEFEF] space-y-2 text-xs text-[#333333]">
                   <li className="flex items-center gap-2">
                     <Check className="w-3.5 h-3.5 text-[#16A34A] shrink-0" />
                     <span className="tabular-nums">
-                      {plan.maxSubmissionsPerMonth.toLocaleString()} submissions/mo
+                      <strong>{plan.maxForms}</strong> forms ·{' '}
+                      <strong>{plan.maxSubmissionsPerMonth.toLocaleString()}</strong> subs/mo
                     </span>
                   </li>
                   <li className="flex items-center gap-2">
                     <Check className="w-3.5 h-3.5 text-[#16A34A] shrink-0" />
                     <span className="tabular-nums">
-                      {plan.maxEmailsPerMonth.toLocaleString()} Resend emails/mo
+                      <strong>{plan.maxProjects}</strong> projects ·{' '}
+                      <strong>{plan.maxApiKeys}</strong> API keys
+                    </span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <Check className="w-3.5 h-3.5 text-[#16A34A] shrink-0" />
+                    <span className="tabular-nums">
+                      <strong>{plan.maxShortLinks}</strong> short links ·{' '}
+                      {plan.features.svgQrExport ? 'PNG+SVG QR' : 'PNG QR'}
+                    </span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    {plan.features.newsletterApi ? (
+                      <Check className="w-3.5 h-3.5 text-[#16A34A] shrink-0" />
+                    ) : (
+                      <Lock className="w-3.5 h-3.5 text-[#A3A3A3] shrink-0" />
+                    )}
+                    <span className={plan.features.newsletterApi ? '' : 'text-[#737373]'}>
+                      {plan.features.newsletterApi
+                        ? `Newsletter API (${plan.maxNewsletterLists} lists)`
+                        : 'Newsletter API (Starter+)'}
+                    </span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    {plan.features.pdfGenerator ? (
+                      <Check className="w-3.5 h-3.5 text-[#16A34A] shrink-0" />
+                    ) : (
+                      <Lock className="w-3.5 h-3.5 text-[#A3A3A3] shrink-0" />
+                    )}
+                    <span className={plan.features.pdfGenerator ? '' : 'text-[#737373]'}>
+                      PDF Studio &amp; Custom Short Slugs
                     </span>
                   </li>
                   <li className="flex items-center gap-2">
@@ -442,17 +721,19 @@ export const BillingView: React.FC<{ highlightPlanSlug?: string }> = ({ highligh
                       <Lock className="w-3.5 h-3.5 text-[#A3A3A3] shrink-0" />
                     )}
                     <span className={plan.features.advancedBuilder ? '' : 'text-[#737373]'}>
-                      Advanced Builder, JS Fetch &amp; Embed
+                      Advanced Builder, Embed &amp; Auto-Reply
                     </span>
                   </li>
                   <li className="flex items-center gap-2">
-                    {plan.features.customEmailTemplates ? (
+                    {plan.features.webhooks ? (
                       <Check className="w-3.5 h-3.5 text-[#16A34A] shrink-0" />
                     ) : (
                       <Lock className="w-3.5 h-3.5 text-[#A3A3A3] shrink-0" />
                     )}
-                    <span className={plan.features.customEmailTemplates ? '' : 'text-[#737373]'}>
-                      Custom Sender Name &amp; Auto-Reply
+                    <span className={plan.features.webhooks ? '' : 'text-[#737373]'}>
+                      {plan.features.webhooks
+                        ? `Signed Webhooks (${plan.maxWebhooks} endpoints)`
+                        : 'Signed Webhooks & White-Label'}
                     </span>
                   </li>
                   <li className="flex items-center gap-2">
@@ -462,17 +743,7 @@ export const BillingView: React.FC<{ highlightPlanSlug?: string }> = ({ highligh
                       <Lock className="w-3.5 h-3.5 text-[#A3A3A3] shrink-0" />
                     )}
                     <span className={plan.features.multipleRecipients ? '' : 'text-[#737373]'}>
-                      Multiple recipients &amp; CSV Export
-                    </span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    {plan.features.removeBranding ? (
-                      <Check className="w-3.5 h-3.5 text-[#16A34A] shrink-0" />
-                    ) : (
-                      <Lock className="w-3.5 h-3.5 text-[#A3A3A3] shrink-0" />
-                    )}
-                    <span className={plan.features.removeBranding ? '' : 'text-[#737373]'}>
-                      White-label &amp; Outbound Webhooks
+                      Multi-Recipient &amp; CSV Exports
                     </span>
                   </li>
                   <li className="flex items-center gap-2">
@@ -481,8 +752,12 @@ export const BillingView: React.FC<{ highlightPlanSlug?: string }> = ({ highligh
                     ) : (
                       <Lock className="w-3.5 h-3.5 text-[#A3A3A3] shrink-0" />
                     )}
-                    <span className={plan.features.teamMembers ? 'font-semibold text-[#111111]' : 'text-[#737373]'}>
-                      Team Collaboration (up to 15 seats)
+                    <span
+                      className={
+                        plan.features.teamMembers ? 'font-semibold text-[#111111]' : 'text-[#737373]'
+                      }
+                    >
+                      Team RBAC (up to {plan.maxTeamSeats || 15} seats)
                     </span>
                   </li>
                 </ul>
@@ -508,6 +783,76 @@ export const BillingView: React.FC<{ highlightPlanSlug?: string }> = ({ highligh
             </div>
           );
         })}
+      </div>
+
+      {/* Full Service & Feature Access Comparison Matrix */}
+      <div className="bg-white border border-[#E5E5E5] rounded-lg overflow-hidden">
+        <div className="px-6 py-4 border-b border-[#E5E5E5] flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-bold text-[#111111]">
+              Full Plan Access &amp; Entitlement Matrix
+            </h2>
+            <p className="text-xs text-[#525252] mt-0.5">
+              Every service lock and quota enforced across BrosDev Developer Services.
+            </p>
+          </div>
+          <span className="text-xs font-mono text-[#737373]">
+            Active Tier: {cp?.name || 'Free'}
+          </span>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="bg-[#FAFAFA] border-b border-[#E5E5E5] text-[#525252]">
+                <th className="py-3 px-5 font-semibold min-w-[240px]">Service / Feature</th>
+                {data.plans.map((p) => (
+                  <th
+                    key={p.id}
+                    className={`py-3 px-4 text-center font-bold min-w-[120px] ${
+                      cp?.id === p.id ? 'text-[#A90706] bg-[#FEF2F2]/60' : 'text-[#111111]'
+                    }`}
+                  >
+                    {p.name}
+                    <div className="text-[11px] font-mono font-normal text-[#737373]">
+                      ${Math.round((billingCycle === 'yearly' ? p.yearlyPriceCents : p.monthlyPriceCents) / 100)}
+                      /{billingCycle === 'yearly' ? 'yr' : 'mo'}
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#EFEFEF]">
+              {comparisonGroups.map((section) => (
+                <React.Fragment key={section.group}>
+                  <tr className="bg-[#FAFAFA]/80">
+                    <td
+                      colSpan={data.plans.length + 1}
+                      className="py-2 px-5 text-[11px] font-bold uppercase tracking-wider text-[#525252]"
+                    >
+                      {section.group}
+                    </td>
+                  </tr>
+                  {section.rows.map((row) => (
+                    <tr key={row.label} className="hover:bg-[#FAFAFA]/60">
+                      <td className="py-2.5 px-5 text-[#262626] font-medium">{row.label}</td>
+                      {data.plans.map((p) => (
+                        <td
+                          key={p.id}
+                          className={`py-2.5 px-4 text-center ${
+                            cp?.id === p.id ? 'bg-[#FEF2F2]/30' : ''
+                          }`}
+                        >
+                          {row.render(p)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Payment History & Invoices */}

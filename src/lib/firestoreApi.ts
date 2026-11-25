@@ -36,6 +36,7 @@ import type {
 import {
   BUSINESS_TEAM_SEATS,
   formatAccountSenderEmail,
+  hydratePlanQuotas,
   isAdvancedFieldType,
 } from './planLimits';
 
@@ -106,7 +107,7 @@ const DEFAULT_PLANS: PlanRecord[] = [
     slug: 'free',
     name: 'Free',
     audienceLabel: 'For personal projects & prototypes',
-    description: 'Core form builder and HTML endpoint routing with BrosDev branding.',
+    description: 'Core Forms API, Resend alerts, 1 project, 1 API key, 5 short links, and PNG QR codes.',
     monthlyPriceCents: 0,
     yearlyPriceCents: 0,
     trialDays: 0,
@@ -115,6 +116,13 @@ const DEFAULT_PLANS: PlanRecord[] = [
     maxEmailsPerMonth: 100,
     maxApiRequestsPerMin: 20,
     maxStorageMb: 25,
+    maxProjects: 1,
+    maxApiKeys: 1,
+    maxWebhooks: 0,
+    maxNewsletterLists: 0,
+    maxSubscribers: 0,
+    maxShortLinks: 5,
+    maxTeamSeats: 1,
     sortOrder: 1,
     isActive: true,
     isArchived: false,
@@ -129,14 +137,19 @@ const DEFAULT_PLANS: PlanRecord[] = [
       teamMembers: false,
       prioritySupport: false,
       advancedAnalytics: false,
+      newsletterApi: false,
+      pdfGenerator: false,
+      customShortSlugs: false,
+      svgQrExport: false,
+      scopedApiKeys: false,
     },
   },
   {
     id: 2,
     slug: 'starter',
     name: 'Starter',
-    audienceLabel: 'For early-stage teams & freelancers',
-    description: 'Advanced form builder, JavaScript Fetch integration, and custom email templates.',
+    audienceLabel: 'For freelancers & indie websites',
+    description: 'Advanced builder, JS/Embed widgets, Newsletter API, PDF Studio, SVG QR, custom short slugs & 5 scoped keys.',
     monthlyPriceCents: 1900,
     yearlyPriceCents: 19000,
     trialDays: 14,
@@ -145,6 +158,13 @@ const DEFAULT_PLANS: PlanRecord[] = [
     maxEmailsPerMonth: 2000,
     maxApiRequestsPerMin: 60,
     maxStorageMb: 250,
+    maxProjects: 3,
+    maxApiKeys: 5,
+    maxWebhooks: 0,
+    maxNewsletterLists: 3,
+    maxSubscribers: 2500,
+    maxShortLinks: 50,
+    maxTeamSeats: 1,
     sortOrder: 2,
     isActive: true,
     isArchived: false,
@@ -159,6 +179,11 @@ const DEFAULT_PLANS: PlanRecord[] = [
       teamMembers: false,
       prioritySupport: false,
       advancedAnalytics: false,
+      newsletterApi: true,
+      pdfGenerator: true,
+      customShortSlugs: true,
+      svgQrExport: true,
+      scopedApiKeys: true,
     },
   },
   {
@@ -166,7 +191,7 @@ const DEFAULT_PLANS: PlanRecord[] = [
     slug: 'professional',
     name: 'Professional',
     audienceLabel: 'For growing SaaS & agencies',
-    description: 'Multiple email recipients, white-label delivery, and advanced analytics.',
+    description: 'Signed HMAC webhooks, white-label delivery, multi-recipient alerts, CSV exports, 15 projects & 25K subscribers.',
     monthlyPriceCents: 4900,
     yearlyPriceCents: 49000,
     trialDays: 14,
@@ -175,6 +200,13 @@ const DEFAULT_PLANS: PlanRecord[] = [
     maxEmailsPerMonth: 10000,
     maxApiRequestsPerMin: 180,
     maxStorageMb: 2048,
+    maxProjects: 15,
+    maxApiKeys: 25,
+    maxWebhooks: 10,
+    maxNewsletterLists: 15,
+    maxSubscribers: 25000,
+    maxShortLinks: 250,
+    maxTeamSeats: 1,
     sortOrder: 3,
     isActive: true,
     isArchived: false,
@@ -189,14 +221,19 @@ const DEFAULT_PLANS: PlanRecord[] = [
       teamMembers: false,
       prioritySupport: true,
       advancedAnalytics: true,
+      newsletterApi: true,
+      pdfGenerator: true,
+      customShortSlugs: true,
+      svgQrExport: true,
+      scopedApiKeys: true,
     },
   },
   {
     id: 4,
     slug: 'business',
     name: 'Business',
-    audienceLabel: 'For high-volume operations',
-    description: 'Enterprise quotas, team collaboration, webhooks, and custom integrations.',
+    audienceLabel: 'For production teams & agencies',
+    description: 'Full BrosDev Developer Services suite with 15 team seats, 50 projects, 50 webhooks, 100 API keys & 50K monthly quota.',
     monthlyPriceCents: 12900,
     yearlyPriceCents: 129000,
     trialDays: 14,
@@ -205,6 +242,13 @@ const DEFAULT_PLANS: PlanRecord[] = [
     maxEmailsPerMonth: 50000,
     maxApiRequestsPerMin: 600,
     maxStorageMb: 10240,
+    maxProjects: 50,
+    maxApiKeys: 100,
+    maxWebhooks: 50,
+    maxNewsletterLists: 100,
+    maxSubscribers: 250000,
+    maxShortLinks: 1000,
+    maxTeamSeats: BUSINESS_TEAM_SEATS,
     sortOrder: 4,
     isActive: true,
     isArchived: false,
@@ -219,6 +263,11 @@ const DEFAULT_PLANS: PlanRecord[] = [
       teamMembers: true,
       prioritySupport: true,
       advancedAnalytics: true,
+      newsletterApi: true,
+      pdfGenerator: true,
+      customShortSlugs: true,
+      svgQrExport: true,
+      scopedApiKeys: true,
     },
   },
 ];
@@ -624,28 +673,7 @@ async function fetchPlans(includeArchived = false): Promise<PlanRecord[]> {
       : query(collection(db, 'plans'), where('isActive', '==', true));
     const snap = await getDocs(q);
     if (snap.empty) return DEFAULT_PLANS;
-    const rows = snap.docs.map((d) => {
-      const data = d.data();
-      return {
-        id: Number(data.id),
-        slug: String(data.slug),
-        name: String(data.name),
-        audienceLabel: String(data.audienceLabel || ''),
-        description: String(data.description || ''),
-        monthlyPriceCents: Number(data.monthlyPriceCents || 0),
-        yearlyPriceCents: Number(data.yearlyPriceCents || 0),
-        trialDays: Number(data.trialDays || 0),
-        maxForms: Number(data.maxForms || 2),
-        maxSubmissionsPerMonth: Number(data.maxSubmissionsPerMonth || 100),
-        maxEmailsPerMonth: Number(data.maxEmailsPerMonth || 100),
-        maxApiRequestsPerMin: Number(data.maxApiRequestsPerMin || 20),
-        maxStorageMb: Number(data.maxStorageMb || 25),
-        features: data.features || DEFAULT_PLANS[0].features,
-        isActive: Boolean(data.isActive),
-        isArchived: Boolean(data.isArchived),
-        sortOrder: Number(data.sortOrder || 0),
-      } as PlanRecord;
-    });
+    const rows = snap.docs.map((d) => hydratePlanQuotas(d.data() as Partial<PlanRecord>));
     return rows.sort((a, b) => a.sortOrder - b.sortOrder);
   } catch {
     return DEFAULT_PLANS;
@@ -1069,6 +1097,13 @@ export async function handleFirestoreApi<T = any>(
         maxEmails: userDoc.customMaxEmails ?? currentPlan.maxEmailsPerMonth,
         maxApiRequestsPerMin: currentPlan.maxApiRequestsPerMin,
         maxStorageMb: currentPlan.maxStorageMb,
+        maxProjects: currentPlan.maxProjects,
+        maxApiKeys: currentPlan.maxApiKeys,
+        maxWebhooks: currentPlan.maxWebhooks,
+        maxNewsletterLists: currentPlan.maxNewsletterLists,
+        maxSubscribers: currentPlan.maxSubscribers,
+        maxShortLinks: currentPlan.maxShortLinks,
+        maxTeamSeats: currentPlan.maxTeamSeats,
       },
       platformEmailSender: {
         sendingDomain,
@@ -2725,24 +2760,60 @@ export async function handleFirestoreApi<T = any>(
       } as T;
     }
 
+    if (pathname === '/api/admin/plans/sync-defaults' && upperMethod === 'POST') {
+      for (const plan of DEFAULT_PLANS) {
+        await setDoc(
+          doc(db, 'plans', `plan_${plan.id}`),
+          {
+            ...plan,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
+      await writeAuditLog(
+        'plan.sync_defaults',
+        'plan',
+        'all',
+        'Synchronized 4 BrosDev Developer Services subscription plans with updated quotas and access flags.'
+      );
+      return { ok: true, synced: DEFAULT_PLANS.length } as T;
+    }
+
     if (pathname === '/api/admin/plans' && upperMethod === 'POST') {
       const id = nowNumericId();
       const slug = String(body?.slug || body?.name || `plan_${id}`).toLowerCase().replace(/[^a-z0-9_-]/g, '_').slice(0, 64);
-      const payload = {
+      const hydrated = hydratePlanQuotas({
+        ...body,
         id,
         slug,
         name: String(body?.name || 'New Plan').slice(0, 80),
         audienceLabel: String(body?.audienceLabel || '').slice(0, 160),
         description: String(body?.description || '').slice(0, 500),
-        monthlyPriceCents: Number(body?.monthlyPriceCents || 0),
-        yearlyPriceCents: Number(body?.yearlyPriceCents || 0),
-        trialDays: Number(body?.trialDays || 0),
-        maxForms: Number(body?.maxForms || 5),
-        maxSubmissionsPerMonth: Number(body?.maxSubmissionsPerMonth || 500),
-        maxEmailsPerMonth: Number(body?.maxEmailsPerMonth || 500),
-        maxApiRequestsPerMin: Number(body?.maxApiRequestsPerMin || 60),
-        maxStorageMb: Number(body?.maxStorageMb || 100),
-        features: body?.features || DEFAULT_PLANS[0].features,
+      });
+      const payload = {
+        id: hydrated.id,
+        slug: hydrated.slug,
+        name: hydrated.name,
+        audienceLabel: hydrated.audienceLabel,
+        description: hydrated.description,
+        monthlyPriceCents: hydrated.monthlyPriceCents,
+        yearlyPriceCents: hydrated.yearlyPriceCents,
+        trialDays: hydrated.trialDays,
+        maxForms: hydrated.maxForms,
+        maxSubmissionsPerMonth: hydrated.maxSubmissionsPerMonth,
+        maxEmailsPerMonth: hydrated.maxEmailsPerMonth,
+        maxApiRequestsPerMin: hydrated.maxApiRequestsPerMin,
+        maxStorageMb: hydrated.maxStorageMb,
+        maxProjects: hydrated.maxProjects,
+        maxApiKeys: hydrated.maxApiKeys,
+        maxWebhooks: hydrated.maxWebhooks,
+        maxNewsletterLists: hydrated.maxNewsletterLists,
+        maxSubscribers: hydrated.maxSubscribers,
+        maxShortLinks: hydrated.maxShortLinks,
+        maxTeamSeats: hydrated.maxTeamSeats,
+        features: hydrated.features,
         isActive: body?.isActive !== false,
         isArchived: Boolean(body?.isArchived),
         sortOrder: Number(body?.sortOrder || 10),
@@ -2761,19 +2832,32 @@ export async function handleFirestoreApi<T = any>(
       const found = snap.docs.find((d) => Number(d.data().id) === planId);
       if (!found) throw new Error('Plan not found.');
       if (upperMethod === 'PUT') {
+        const currentHydrated = hydratePlanQuotas(found.data() as Partial<PlanRecord>);
+        const nextHydrated = hydratePlanQuotas({
+          ...currentHydrated,
+          ...body,
+          features: { ...currentHydrated.features, ...(body?.features || {}) },
+        });
         const patch = {
-          name: String(body?.name || found.data().name).slice(0, 80),
-          audienceLabel: String(body?.audienceLabel ?? found.data().audienceLabel ?? '').slice(0, 160),
-          description: String(body?.description ?? found.data().description ?? '').slice(0, 500),
-          monthlyPriceCents: Number(body?.monthlyPriceCents ?? found.data().monthlyPriceCents),
-          yearlyPriceCents: Number(body?.yearlyPriceCents ?? found.data().yearlyPriceCents),
-          trialDays: Number(body?.trialDays ?? found.data().trialDays ?? 0),
-          maxForms: Number(body?.maxForms ?? found.data().maxForms),
-          maxSubmissionsPerMonth: Number(body?.maxSubmissionsPerMonth ?? found.data().maxSubmissionsPerMonth),
-          maxEmailsPerMonth: Number(body?.maxEmailsPerMonth ?? found.data().maxEmailsPerMonth),
-          maxApiRequestsPerMin: Number(body?.maxApiRequestsPerMin ?? found.data().maxApiRequestsPerMin),
-          maxStorageMb: Number(body?.maxStorageMb ?? found.data().maxStorageMb),
-          features: body?.features || found.data().features,
+          name: String(body?.name || currentHydrated.name).slice(0, 80),
+          audienceLabel: String(body?.audienceLabel ?? currentHydrated.audienceLabel ?? '').slice(0, 160),
+          description: String(body?.description ?? currentHydrated.description ?? '').slice(0, 500),
+          monthlyPriceCents: Number(body?.monthlyPriceCents ?? currentHydrated.monthlyPriceCents),
+          yearlyPriceCents: Number(body?.yearlyPriceCents ?? currentHydrated.yearlyPriceCents),
+          trialDays: Number(body?.trialDays ?? currentHydrated.trialDays ?? 0),
+          maxForms: Number(body?.maxForms ?? currentHydrated.maxForms),
+          maxSubmissionsPerMonth: Number(body?.maxSubmissionsPerMonth ?? currentHydrated.maxSubmissionsPerMonth),
+          maxEmailsPerMonth: Number(body?.maxEmailsPerMonth ?? currentHydrated.maxEmailsPerMonth),
+          maxApiRequestsPerMin: Number(body?.maxApiRequestsPerMin ?? currentHydrated.maxApiRequestsPerMin),
+          maxStorageMb: Number(body?.maxStorageMb ?? currentHydrated.maxStorageMb),
+          maxProjects: Number(body?.maxProjects ?? nextHydrated.maxProjects),
+          maxApiKeys: Number(body?.maxApiKeys ?? nextHydrated.maxApiKeys),
+          maxWebhooks: Number(body?.maxWebhooks ?? nextHydrated.maxWebhooks),
+          maxNewsletterLists: Number(body?.maxNewsletterLists ?? nextHydrated.maxNewsletterLists),
+          maxSubscribers: Number(body?.maxSubscribers ?? nextHydrated.maxSubscribers),
+          maxShortLinks: Number(body?.maxShortLinks ?? nextHydrated.maxShortLinks),
+          maxTeamSeats: Number(body?.maxTeamSeats ?? nextHydrated.maxTeamSeats),
+          features: nextHydrated.features,
           isActive: body?.isActive !== undefined ? Boolean(body.isActive) : Boolean(found.data().isActive),
           isArchived: body?.isArchived !== undefined ? Boolean(body.isArchived) : Boolean(found.data().isArchived),
           sortOrder: Number(body?.sortOrder ?? found.data().sortOrder ?? 0),

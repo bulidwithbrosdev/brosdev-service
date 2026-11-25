@@ -1,10 +1,17 @@
 import React, { useState } from 'react';
 import {
   LayoutDashboard,
+  Layers,
+  FolderKanban,
   FileText,
   Inbox,
+  Webhook,
+  Newspaper,
+  KeyRound,
+  Wrench,
   Users,
   CreditCard,
+  BookOpen,
   Settings,
   ShieldCheck,
   LogOut,
@@ -16,12 +23,19 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { FormRecord } from '../../types';
 import { DashboardView } from './DashboardView';
+import { ProductsView } from './ProductsView';
+import { ProjectsView } from './ProjectsView';
 import { FormsListView } from './FormsListView';
 import { FormBuilderView } from './FormBuilderView';
 import { IntegrationView } from './IntegrationView';
 import { SubmissionsView } from './SubmissionsView';
+import { WebhooksView } from './WebhooksView';
+import { NewsletterView } from './NewsletterView';
+import { ApiKeysView } from './ApiKeysView';
+import { UtilitiesView } from './UtilitiesView';
 import { TeamView } from './TeamView';
 import { BillingView } from './BillingView';
+import { DocsView } from './DocsView';
 import { AccountSettingsView } from './AccountSettingsView';
 import { UpgradeModal } from '../shared/UpgradeModal';
 import { apiRequest } from '../../lib/api';
@@ -29,13 +43,35 @@ import { hasPlanFeature, isFormLimitReached, type PlanLockKey } from '../../lib/
 
 type CustomerRoute =
   | { view: 'dashboard' }
+  | { view: 'products' }
+  | { view: 'projects' }
   | { view: 'forms' }
   | { view: 'builder'; formId: number }
   | { view: 'integration'; form: FormRecord; initialSecret?: string }
   | { view: 'submissions'; formId?: number }
+  | { view: 'webhooks' }
+  | { view: 'newsletter' }
+  | { view: 'apikeys' }
+  | { view: 'utilities'; subTab?: 'qr' | 'shortener' | 'pdf' }
   | { view: 'team' }
   | { view: 'billing'; highlightPlan?: string }
+  | { view: 'docs' }
   | { view: 'settings' };
+
+type SidebarNavId =
+  | 'dashboard'
+  | 'products'
+  | 'projects'
+  | 'forms'
+  | 'submissions'
+  | 'webhooks'
+  | 'newsletter'
+  | 'apikeys'
+  | 'utilities'
+  | 'team'
+  | 'billing'
+  | 'docs'
+  | 'settings';
 
 export const CustomerPortal: React.FC<{ onEnterAdmin: () => void }> = ({ onEnterAdmin }) => {
   const { workspace, logout, refreshWorkspace } = useAuth();
@@ -46,6 +82,8 @@ export const CustomerPortal: React.FC<{ onEnterAdmin: () => void }> = ({ onEnter
 
   const formLimitReached = isFormLimitReached(workspace);
   const canManageTeam = hasPlanFeature(workspace, 'teamMembers');
+  const canUseWebhooks = hasPlanFeature(workspace, 'webhooks');
+  const canUseNewsletter = hasPlanFeature(workspace, 'newsletterApi');
 
   const handleQuickCreateForm = async () => {
     if (formLimitReached) {
@@ -71,46 +109,72 @@ export const CustomerPortal: React.FC<{ onEnterAdmin: () => void }> = ({ onEnter
     }
   };
 
-  const navItems: Array<{
-    id: 'dashboard' | 'forms' | 'submissions' | 'team' | 'billing' | 'settings';
-    label: string;
-    icon: React.ComponentType<any>;
-    locked?: boolean;
+  const navGroups: Array<{
+    title: string;
+    items: Array<{
+      id: SidebarNavId;
+      label: string;
+      icon: React.ComponentType<any>;
+      locked?: boolean;
+    }>;
   }> = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'forms', label: 'Forms', icon: FileText },
-    { id: 'submissions', label: 'Submissions', icon: Inbox },
-    { id: 'team', label: 'Team', icon: Users, locked: !canManageTeam },
-    { id: 'billing', label: 'Billing & Usage', icon: CreditCard },
-    { id: 'settings', label: 'Account Settings', icon: Settings },
+    {
+      title: 'Workspace',
+      items: [
+        { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
+        { id: 'products', label: 'Products Hub', icon: Layers },
+        { id: 'projects', label: 'Projects & Domains', icon: FolderKanban },
+      ],
+    },
+    {
+      title: 'Developer Services',
+      items: [
+        { id: 'forms', label: 'Forms API', icon: FileText },
+        { id: 'submissions', label: 'Submissions', icon: Inbox },
+        { id: 'webhooks', label: 'Webhooks', icon: Webhook, locked: !canUseWebhooks },
+        { id: 'newsletter', label: 'Newsletter API', icon: Newspaper, locked: !canUseNewsletter },
+        { id: 'apikeys', label: 'API Keys', icon: KeyRound },
+        { id: 'utilities', label: 'QR · Links · PDF', icon: Wrench },
+      ],
+    },
+    {
+      title: 'Organization',
+      items: [
+        { id: 'team', label: 'Team', icon: Users, locked: !canManageTeam },
+        { id: 'billing', label: 'Plans & Billing', icon: CreditCard },
+        { id: 'docs', label: 'API Docs', icon: BookOpen },
+        { id: 'settings', label: 'Account Settings', icon: Settings },
+      ],
+    },
   ];
 
-  const pageTitle =
-    route.view === 'dashboard'
-      ? 'Dashboard'
-      : route.view === 'forms'
-        ? 'Forms'
-        : route.view === 'builder'
-          ? 'Form Builder'
-          : route.view === 'integration'
-            ? 'Integration Code'
-            : route.view === 'submissions'
-              ? 'Submissions'
-              : route.view === 'team'
-                ? 'Team Collaboration'
-                : route.view === 'settings'
-                  ? 'Account Settings'
-                  : 'Billing & Usage';
+  const pageTitleMap: Record<CustomerRoute['view'], string> = {
+    dashboard: 'Overview',
+    products: 'Products Hub',
+    projects: 'Projects & Domains',
+    forms: 'Forms API',
+    builder: 'Form Builder',
+    integration: 'Integration Code',
+    submissions: 'Submissions',
+    webhooks: 'Webhook Service',
+    newsletter: 'Newsletter API',
+    apikeys: 'API Keys',
+    utilities: 'Developer Utilities',
+    team: 'Team Collaboration',
+    billing: 'Billing & Usage',
+    docs: 'API Documentation',
+    settings: 'Account Settings',
+  };
 
   const sidebarContent = (
     <div className="flex flex-col h-full bg-white border-r border-[#E5E5E5]">
-      <div className="h-16 px-5 border-b border-[#E5E5E5] flex items-center justify-between">
+      <div className="h-16 px-5 border-b border-[#E5E5E5] flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded bg-[#A90706] flex items-center justify-center text-white font-bold text-sm">
             B
           </div>
           <span className="font-bold text-base tracking-tight text-[#111111] whitespace-nowrap">
-            BrosDev Forms
+            BrosDev Services
           </span>
         </div>
         <button
@@ -121,40 +185,47 @@ export const CustomerPortal: React.FC<{ onEnterAdmin: () => void }> = ({ onEnter
         </button>
       </div>
 
-      <nav className="flex-1 px-3 py-5 space-y-1">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const active =
-            route.view === item.id ||
-            (item.id === 'forms' && (route.view === 'builder' || route.view === 'integration'));
-          return (
-            <button
-              key={item.id}
-              onClick={() => {
-                setRoute({ view: item.id } as CustomerRoute);
-                setMobileMenu(false);
-              }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
-                active
-                  ? 'bg-[#FEF2F2] text-[#A90706] font-semibold'
-                  : 'text-[#333333] hover:bg-[#F5F5F5]'
-              }`}
-            >
-              <Icon className="w-4 h-4 shrink-0" />
-              <span className="flex-1 text-left">{item.label}</span>
-              {item.locked && <Lock className="w-3.5 h-3.5 text-[#A3A3A3] shrink-0" />}
-            </button>
-          );
-        })}
+      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
+        {navGroups.map((group) => (
+          <div key={group.title} className="space-y-1">
+            <div className="px-3 pb-1 text-[11px] font-semibold text-[#737373]">
+              {group.title}
+            </div>
+            {group.items.map((item) => {
+              const Icon = item.icon;
+              const active =
+                route.view === item.id ||
+                (item.id === 'forms' && (route.view === 'builder' || route.view === 'integration'));
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    setRoute({ view: item.id } as CustomerRoute);
+                    setMobileMenu(false);
+                  }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                    active
+                      ? 'bg-[#FEF2F2] text-[#A90706] font-semibold'
+                      : 'text-[#333333] hover:bg-[#F5F5F5]'
+                  }`}
+                >
+                  <Icon className="w-4 h-4 shrink-0" />
+                  <span className="flex-1 text-left truncate">{item.label}</span>
+                  {item.locked && <Lock className="w-3.5 h-3.5 text-[#A3A3A3] shrink-0" />}
+                </button>
+              );
+            })}
+          </div>
+        ))}
 
         {workspace?.admin && (
-          <div className="pt-4 mt-4 border-t border-[#E5E5E5]">
+          <div className="pt-3 border-t border-[#E5E5E5]">
             <button
               onClick={() => {
                 setMobileMenu(false);
                 onEnterAdmin();
               }}
-              className="w-full flex items-center gap-3 px-3 py-2.5 text-sm font-semibold text-[#111111] hover:bg-[#F5F5F5] rounded-lg transition-colors cursor-pointer whitespace-nowrap"
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-[#111111] hover:bg-[#F5F5F5] rounded-md transition-colors cursor-pointer whitespace-nowrap"
             >
               <ShieldCheck className="w-4 h-4 text-[#A90706] shrink-0" />
               <span>Super Admin Panel</span>
@@ -163,7 +234,7 @@ export const CustomerPortal: React.FC<{ onEnterAdmin: () => void }> = ({ onEnter
         )}
       </nav>
 
-      <div className="p-4 border-t border-[#E5E5E5] space-y-3">
+      <div className="p-4 border-t border-[#E5E5E5] space-y-3 shrink-0">
         <div className="text-xs">
           <div className="font-semibold text-[#111111] truncate">
             {workspace?.user.displayName || workspace?.user.email}
@@ -215,11 +286,11 @@ export const CustomerPortal: React.FC<{ onEnterAdmin: () => void }> = ({ onEnter
               <Menu className="w-5 h-5" />
             </button>
             <div className="text-sm font-bold text-[#111111] truncate">
-              Workspace / {pageTitle}
+              Workspace / {pageTitleMap[route.view]}
             </div>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-2.5 shrink-0">
             {route.view !== 'builder' && (
               <button
                 onClick={handleQuickCreateForm}
@@ -256,6 +327,25 @@ export const CustomerPortal: React.FC<{ onEnterAdmin: () => void }> = ({ onEnter
               onRequestUpgrade={(key) => setUpgradeLockKey(key)}
             />
           )}
+          {route.view === 'products' && workspace && (
+            <ProductsView
+              workspace={workspace}
+              onNavigate={(target, subTab) => {
+                if (target === 'utilities') {
+                  setRoute({ view: 'utilities', subTab });
+                } else {
+                  setRoute({ view: target } as CustomerRoute);
+                }
+              }}
+              onRequestUpgrade={(key) => setUpgradeLockKey(key)}
+            />
+          )}
+          {route.view === 'projects' && workspace && (
+            <ProjectsView
+              workspace={workspace}
+              onRequestUpgrade={(key) => setUpgradeLockKey(key)}
+            />
+          )}
           {route.view === 'forms' && (
             <FormsListView
               onEditForm={(formId) => setRoute({ view: 'builder', formId })}
@@ -288,6 +378,31 @@ export const CustomerPortal: React.FC<{ onEnterAdmin: () => void }> = ({ onEnter
               onRequestUpgrade={(key) => setUpgradeLockKey(key)}
             />
           )}
+          {route.view === 'webhooks' && workspace && (
+            <WebhooksView
+              workspace={workspace}
+              onRequestUpgrade={(key) => setUpgradeLockKey(key)}
+            />
+          )}
+          {route.view === 'newsletter' && workspace && (
+            <NewsletterView
+              workspace={workspace}
+              onRequestUpgrade={(key) => setUpgradeLockKey(key)}
+            />
+          )}
+          {route.view === 'apikeys' && workspace && (
+            <ApiKeysView
+              workspace={workspace}
+              onRequestUpgrade={(key) => setUpgradeLockKey(key)}
+            />
+          )}
+          {route.view === 'utilities' && workspace && (
+            <UtilitiesView
+              workspace={workspace}
+              initialTab={route.subTab}
+              onRequestUpgrade={(key) => setUpgradeLockKey(key)}
+            />
+          )}
           {route.view === 'team' && workspace && (
             <TeamView
               workspace={workspace}
@@ -297,6 +412,7 @@ export const CustomerPortal: React.FC<{ onEnterAdmin: () => void }> = ({ onEnter
           {route.view === 'billing' && (
             <BillingView highlightPlanSlug={route.highlightPlan} />
           )}
+          {route.view === 'docs' && workspace && <DocsView workspace={workspace} />}
           {route.view === 'settings' && (
             <AccountSettingsView onOpenBilling={() => setRoute({ view: 'billing' })} />
           )}

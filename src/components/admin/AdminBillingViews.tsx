@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Pencil, Archive, Save, X, FileText } from 'lucide-react';
+import { Plus, Pencil, Archive, Save, X, FileText, RefreshCw } from 'lucide-react';
 import { apiRequest } from '../../lib/api';
 import { InvoiceDetailRecord, InvoiceTemplateConfig, PlanRecord } from '../../types';
 import { InvoiceModal } from '../shared/InvoiceModal';
@@ -17,6 +17,13 @@ const EMPTY_PLAN: Omit<PlanRecord, 'id'> = {
   maxEmailsPerMonth: 5000,
   maxApiRequestsPerMin: 120,
   maxStorageMb: 500,
+  maxProjects: 5,
+  maxApiKeys: 10,
+  maxWebhooks: 5,
+  maxNewsletterLists: 5,
+  maxSubscribers: 10000,
+  maxShortLinks: 100,
+  maxTeamSeats: 1,
   isActive: true,
   isArchived: false,
   sortOrder: 5,
@@ -26,19 +33,44 @@ const EMPTY_PLAN: Omit<PlanRecord, 'id'> = {
     restApi: true,
     webhooks: false,
     customEmailTemplates: true,
-    multipleRecipients: true,
+    multipleRecipients: false,
     removeBranding: false,
     teamMembers: false,
     prioritySupport: false,
     advancedAnalytics: false,
+    newsletterApi: true,
+    pdfGenerator: true,
+    customShortSlugs: true,
+    svgQrExport: true,
+    scopedApiKeys: true,
   },
+};
+
+const FEATURE_LABELS: Record<keyof PlanRecord['features'], string> = {
+  advancedBuilder: 'Advanced Form Builder',
+  jsIntegration: 'JS Fetch & Embed Widget',
+  restApi: 'REST API Access',
+  customEmailTemplates: 'Custom Sender & Auto-Reply',
+  multipleRecipients: 'Multiple Email Recipients',
+  removeBranding: 'White-Label (Remove Branding)',
+  webhooks: 'Signed Webhook Service',
+  advancedAnalytics: 'Advanced Analytics & CSV Export',
+  newsletterApi: 'Newsletter Subscription API',
+  scopedApiKeys: 'Project-Scoped Keys & Rotation',
+  customShortSlugs: 'Custom Short Slugs & Expiry',
+  pdfGenerator: 'PDF Document Generator',
+  svgQrExport: 'Vector SVG QR Export',
+  teamMembers: 'Team Collaboration (RBAC)',
+  prioritySupport: 'Priority Support',
 };
 
 export const AdminPlansView: React.FC = () => {
   const [plans, setPlans] = useState<PlanRecord[]>([]);
   const [editing, setEditing] = useState<(Omit<PlanRecord, 'id'> & { id?: number }) | null>(null);
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = async () => {
     const res = await apiRequest<{ plans: PlanRecord[] }>('/api/admin/plans');
@@ -61,11 +93,27 @@ export const AdminPlansView: React.FC = () => {
         await apiRequest('/api/admin/plans', { method: 'POST', body: editing });
       }
       setEditing(null);
+      setNotice('Plan configuration saved to Cloud Firestore.');
       await load();
     } catch (err: any) {
       setError(err.message || 'Failed to save plan');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSyncDefaults = async () => {
+    setSyncing(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await apiRequest('/api/admin/plans/sync-defaults', { method: 'POST' });
+      setNotice('Synchronized all 4 BrosDev Developer Services plans in Cloud Firestore.');
+      await load();
+    } catch (err: any) {
+      setError(err.message || 'Failed to sync default plans.');
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -76,22 +124,46 @@ export const AdminPlansView: React.FC = () => {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-bold text-[#111111]">Subscription Plans &amp; Quotas</h2>
+          <h2 className="text-base font-bold text-[#111111]">
+            BrosDev Services — Subscription Plans &amp; Quotas
+          </h2>
           <p className="text-xs text-[#525252]">
-            All prices, trial durations, limits, and feature flags are stored in PostgreSQL and
-            enforced live on the backend.
+            All prices, Developer Services quotas, and access locks are stored in Cloud Firestore
+            and enforced live across customer workspaces.
           </p>
         </div>
-        <button
-          onClick={() => setEditing({ ...EMPTY_PLAN })}
-          className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#A90706] hover:bg-[#8C0605] rounded-md cursor-pointer whitespace-nowrap"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          Create Plan
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleSyncDefaults}
+            disabled={syncing}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-[#111111] bg-white border border-[#D4D4D4] hover:bg-[#FAFAFA] rounded-md cursor-pointer whitespace-nowrap disabled:opacity-60"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+            {syncing ? 'Syncing...' : 'Sync Default Tiers'}
+          </button>
+          <button
+            onClick={() => setEditing({ ...EMPTY_PLAN, features: { ...EMPTY_PLAN.features } })}
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#A90706] hover:bg-[#8C0605] rounded-md cursor-pointer whitespace-nowrap"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Create Plan
+          </button>
+        </div>
       </div>
+
+      {notice && (
+        <div className="p-3 bg-[#F0FDF4] border border-[#BBF7D0] text-xs text-[#15803D] rounded-md">
+          {notice}
+        </div>
+      )}
+      {error && !editing && (
+        <div className="p-3 bg-[#FEF2F2] border border-[#FECACA] text-xs text-[#A90706] rounded-md">
+          {error}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         {plans.map((p) => (
@@ -126,17 +198,29 @@ export const AdminPlansView: React.FC = () => {
                 <span className="text-xs text-[#737373]">/mo · ${(p.yearlyPriceCents / 100).toFixed(0)}/yr</span>
               </div>
               <div className="mt-4 pt-4 border-t border-[#EFEFEF] space-y-1.5 text-xs text-[#333333] tabular-nums">
-                <div>Forms limit: <strong>{p.maxForms}</strong></div>
-                <div>Submissions/mo: <strong>{p.maxSubmissionsPerMonth.toLocaleString()}</strong></div>
+                <div>Projects: <strong>{p.maxProjects}</strong> · API Keys: <strong>{p.maxApiKeys}</strong></div>
+                <div>Forms: <strong>{p.maxForms}</strong> · Subs/mo: <strong>{p.maxSubmissionsPerMonth.toLocaleString()}</strong></div>
                 <div>Emails/mo: <strong>{p.maxEmailsPerMonth.toLocaleString()}</strong></div>
+                <div>Webhooks: <strong>{p.features.webhooks ? p.maxWebhooks : 'Locked'}</strong></div>
+                <div>
+                  Newsletter:{' '}
+                  <strong>
+                    {p.features.newsletterApi
+                      ? `${p.maxNewsletterLists} lists / ${p.maxSubscribers.toLocaleString()} subs`
+                      : 'Locked'}
+                  </strong>
+                </div>
+                <div>
+                  Short Links: <strong>{p.maxShortLinks}</strong> · Team:{' '}
+                  <strong>{p.features.teamMembers ? `${p.maxTeamSeats} seats` : '1 owner'}</strong>
+                </div>
                 <div>API rate limit: <strong>{p.maxApiRequestsPerMin} req/min</strong></div>
-                <div>Free trial: <strong>{p.trialDays} days</strong></div>
               </div>
             </div>
 
             <div className="mt-5 pt-4 border-t border-[#EFEFEF] flex items-center gap-2">
               <button
-                onClick={() => setEditing({ ...p })}
+                onClick={() => setEditing({ ...p, features: { ...p.features } })}
                 className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#111111] bg-[#F5F5F5] hover:bg-[#E5E5E5] rounded cursor-pointer"
               >
                 <Pencil className="w-3.5 h-3.5" />
@@ -159,7 +243,7 @@ export const AdminPlansView: React.FC = () => {
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 overflow-y-auto">
           <form
             onSubmit={handleSave}
-            className="bg-white border border-[#E5E5E5] rounded-xl w-full max-w-2xl p-6 space-y-4 my-8"
+            className="bg-white border border-[#E5E5E5] rounded-xl w-full max-w-3xl p-6 space-y-4 my-8 max-h-[90vh] overflow-y-auto"
           >
             <div className="flex items-center justify-between pb-3 border-b border-[#E5E5E5]">
               <h3 className="text-lg font-bold text-[#111111]">
@@ -172,7 +256,7 @@ export const AdminPlansView: React.FC = () => {
 
             {error && <div className="p-3 bg-[#FEF2F2] text-xs text-[#A90706] rounded">{error}</div>}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div>
                 <label className="block text-xs font-semibold mb-1">Plan Name</label>
                 <input
@@ -194,6 +278,14 @@ export const AdminPlansView: React.FC = () => {
                     })
                   }
                   className="w-full px-3 py-2 text-sm font-mono border border-[#D4D4D4] rounded-md"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1">Audience Label</label>
+                <input
+                  value={editing.audienceLabel}
+                  onChange={(e) => setEditing({ ...editing, audienceLabel: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-[#D4D4D4] rounded-md"
                 />
               </div>
               <div>
@@ -223,40 +315,6 @@ export const AdminPlansView: React.FC = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1">Max Forms</label>
-                <input
-                  type="number"
-                  min={1}
-                  value={editing.maxForms}
-                  onChange={(e) => setEditing({ ...editing, maxForms: Number(e.target.value) })}
-                  className="w-full px-3 py-2 text-sm font-mono border border-[#D4D4D4] rounded-md"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold mb-1">Max Submissions / Month</label>
-                <input
-                  type="number"
-                  min={1}
-                  value={editing.maxSubmissionsPerMonth}
-                  onChange={(e) =>
-                    setEditing({ ...editing, maxSubmissionsPerMonth: Number(e.target.value) })
-                  }
-                  className="w-full px-3 py-2 text-sm font-mono border border-[#D4D4D4] rounded-md"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold mb-1">Max Emails / Month</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={editing.maxEmailsPerMonth}
-                  onChange={(e) =>
-                    setEditing({ ...editing, maxEmailsPerMonth: Number(e.target.value) })
-                  }
-                  className="w-full px-3 py-2 text-sm font-mono border border-[#D4D4D4] rounded-md"
-                />
-              </div>
-              <div>
                 <label className="block text-xs font-semibold mb-1">Free Trial (Days)</label>
                 <input
                   type="number"
@@ -269,14 +327,161 @@ export const AdminPlansView: React.FC = () => {
               </div>
             </div>
 
+            <div>
+              <label className="block text-xs font-semibold mb-1">Plan Description</label>
+              <input
+                value={editing.description}
+                onChange={(e) => setEditing({ ...editing, description: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-[#D4D4D4] rounded-md"
+              />
+            </div>
+
             <div className="pt-2 border-t border-[#EFEFEF]">
-              <div className="text-xs font-bold mb-2">Feature Entitlements</div>
+              <div className="text-xs font-bold text-[#111111] mb-2.5">
+                Resource Quotas (Forms, Email &amp; Developer Services)
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-[#525252] mb-1">Max Forms</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={editing.maxForms}
+                    onChange={(e) => setEditing({ ...editing, maxForms: Number(e.target.value) })}
+                    className="w-full px-2.5 py-1.5 text-xs font-mono border border-[#D4D4D4] rounded-md"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-[#525252] mb-1">Submissions / Mo</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={editing.maxSubmissionsPerMonth}
+                    onChange={(e) =>
+                      setEditing({ ...editing, maxSubmissionsPerMonth: Number(e.target.value) })
+                    }
+                    className="w-full px-2.5 py-1.5 text-xs font-mono border border-[#D4D4D4] rounded-md"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-[#525252] mb-1">Emails / Mo</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editing.maxEmailsPerMonth}
+                    onChange={(e) =>
+                      setEditing({ ...editing, maxEmailsPerMonth: Number(e.target.value) })
+                    }
+                    className="w-full px-2.5 py-1.5 text-xs font-mono border border-[#D4D4D4] rounded-md"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-[#525252] mb-1">API Req / Min</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={editing.maxApiRequestsPerMin}
+                    onChange={(e) =>
+                      setEditing({ ...editing, maxApiRequestsPerMin: Number(e.target.value) })
+                    }
+                    className="w-full px-2.5 py-1.5 text-xs font-mono border border-[#D4D4D4] rounded-md"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-[#525252] mb-1">Max Projects</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={editing.maxProjects}
+                    onChange={(e) => setEditing({ ...editing, maxProjects: Number(e.target.value) })}
+                    className="w-full px-2.5 py-1.5 text-xs font-mono border border-[#D4D4D4] rounded-md"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-[#525252] mb-1">Max API Keys</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editing.maxApiKeys}
+                    onChange={(e) => setEditing({ ...editing, maxApiKeys: Number(e.target.value) })}
+                    className="w-full px-2.5 py-1.5 text-xs font-mono border border-[#D4D4D4] rounded-md"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-[#525252] mb-1">Max Webhooks</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editing.maxWebhooks}
+                    onChange={(e) => setEditing({ ...editing, maxWebhooks: Number(e.target.value) })}
+                    className="w-full px-2.5 py-1.5 text-xs font-mono border border-[#D4D4D4] rounded-md"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-[#525252] mb-1">Short Links</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editing.maxShortLinks}
+                    onChange={(e) => setEditing({ ...editing, maxShortLinks: Number(e.target.value) })}
+                    className="w-full px-2.5 py-1.5 text-xs font-mono border border-[#D4D4D4] rounded-md"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-[#525252] mb-1">Newsletter Lists</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editing.maxNewsletterLists}
+                    onChange={(e) =>
+                      setEditing({ ...editing, maxNewsletterLists: Number(e.target.value) })
+                    }
+                    className="w-full px-2.5 py-1.5 text-xs font-mono border border-[#D4D4D4] rounded-md"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-[#525252] mb-1">Max Subscribers</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editing.maxSubscribers}
+                    onChange={(e) =>
+                      setEditing({ ...editing, maxSubscribers: Number(e.target.value) })
+                    }
+                    className="w-full px-2.5 py-1.5 text-xs font-mono border border-[#D4D4D4] rounded-md"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-[#525252] mb-1">Team Seats</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={editing.maxTeamSeats}
+                    onChange={(e) => setEditing({ ...editing, maxTeamSeats: Number(e.target.value) })}
+                    className="w-full px-2.5 py-1.5 text-xs font-mono border border-[#D4D4D4] rounded-md"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-[#525252] mb-1">Storage (MB)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editing.maxStorageMb}
+                    onChange={(e) => setEditing({ ...editing, maxStorageMb: Number(e.target.value) })}
+                    className="w-full px-2.5 py-1.5 text-xs font-mono border border-[#D4D4D4] rounded-md"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-[#EFEFEF]">
+              <div className="text-xs font-bold text-[#111111] mb-2.5">Feature Access Locks</div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
-                {(Object.keys(editing.features) as Array<keyof PlanRecord['features']>).map((key) => (
+                {(Object.keys(FEATURE_LABELS) as Array<keyof PlanRecord['features']>).map((key) => (
                   <label key={key} className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={editing.features[key]}
+                      checked={Boolean(editing.features[key])}
                       onChange={(e) =>
                         setEditing({
                           ...editing,
@@ -285,7 +490,7 @@ export const AdminPlansView: React.FC = () => {
                       }
                       className="accent-[#A90706]"
                     />
-                    <span>{key.replace(/([A-Z])/g, ' $1')}</span>
+                    <span>{FEATURE_LABELS[key]}</span>
                   </label>
                 ))}
               </div>

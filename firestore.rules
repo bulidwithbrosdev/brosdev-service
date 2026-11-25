@@ -239,7 +239,10 @@ service cloud.firestore {
           'id', 'slug', 'name', 'audienceLabel', 'description',
           'monthlyPriceCents', 'yearlyPriceCents', 'trialDays',
           'maxForms', 'maxSubmissionsPerMonth', 'maxEmailsPerMonth',
-          'maxApiRequestsPerMin', 'maxStorageMb', 'features',
+          'maxApiRequestsPerMin', 'maxStorageMb',
+          'maxProjects', 'maxApiKeys', 'maxWebhooks',
+          'maxNewsletterLists', 'maxSubscribers', 'maxShortLinks', 'maxTeamSeats',
+          'features',
           'isActive', 'isArchived', 'sortOrder', 'createdAt', 'updatedAt'
         ])
         && data.id is number
@@ -255,6 +258,13 @@ service cloud.firestore {
         && data.maxEmailsPerMonth is number && data.maxEmailsPerMonth >= 0
         && data.maxApiRequestsPerMin is number && data.maxApiRequestsPerMin >= 0
         && data.maxStorageMb is number && data.maxStorageMb >= 0
+        && (!('maxProjects' in data) || (data.maxProjects is number && data.maxProjects >= 0))
+        && (!('maxApiKeys' in data) || (data.maxApiKeys is number && data.maxApiKeys >= 0))
+        && (!('maxWebhooks' in data) || (data.maxWebhooks is number && data.maxWebhooks >= 0))
+        && (!('maxNewsletterLists' in data) || (data.maxNewsletterLists is number && data.maxNewsletterLists >= 0))
+        && (!('maxSubscribers' in data) || (data.maxSubscribers is number && data.maxSubscribers >= 0))
+        && (!('maxShortLinks' in data) || (data.maxShortLinks is number && data.maxShortLinks >= 0))
+        && (!('maxTeamSeats' in data) || (data.maxTeamSeats is number && data.maxTeamSeats >= 0))
         && data.features is map
         && data.isActive is bool
         && data.isArchived is bool
@@ -384,6 +394,200 @@ service cloud.firestore {
         && data.status in ['invited', 'active', 'revoked']
         && isBoundedNonEmptyString(data.invitedByEmail, 254)
         && isBoundedNonEmptyString(data.inviteToken, 64)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidProject(data) {
+      return data.keys().hasAll([
+          'id', 'projectKey', 'ownerUid', 'name', 'description', 'allowedDomains',
+          'verifiedDomains', 'verificationToken', 'enabledProducts', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'projectKey', 'ownerUid', 'name', 'description', 'allowedDomains',
+          'verifiedDomains', 'verificationToken', 'enabledProducts', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.id is number
+        && isValidId(data.projectKey) && data.projectKey.size() <= 64
+        && isValidId(data.ownerUid)
+        && isBoundedNonEmptyString(data.name, 120)
+        && isBoundedString(data.description, 500)
+        && data.allowedDomains is list && data.allowedDomains.size() <= 30
+        && (data.allowedDomains.size() == 0 || data.allowedDomains[0] is string)
+        && data.verifiedDomains is list && data.verifiedDomains.size() <= 30
+        && (data.verifiedDomains.size() == 0 || data.verifiedDomains[0] is string)
+        && isBoundedNonEmptyString(data.verificationToken, 80)
+        && data.enabledProducts is list && data.enabledProducts.size() <= 20
+        && (data.enabledProducts.size() == 0 || data.enabledProducts[0] is string)
+        && data.status in ['active', 'archived']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidWebhook(data) {
+      return data.keys().hasAll([
+          'id', 'ownerUid', 'name', 'url', 'events', 'signingSecret',
+          'isActive', 'lastDeliveryStatus', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerUid', 'projectKey', 'name', 'url', 'events', 'signingSecret',
+          'isActive', 'lastDeliveryStatus', 'lastDeliveryAt', 'createdAt', 'updatedAt'
+        ])
+        && data.id is number
+        && isValidId(data.ownerUid)
+        && (!('projectKey' in data) || isBoundedString(data.projectKey, 64))
+        && isBoundedNonEmptyString(data.name, 120)
+        && isBoundedNonEmptyString(data.url, 500)
+        && data.events is list && data.events.size() >= 1 && data.events.size() <= 15
+        && data.events[0] is string
+        && isBoundedNonEmptyString(data.signingSecret, 128)
+        && data.isActive is bool
+        && data.lastDeliveryStatus in ['idle', 'succeeded', 'failed']
+        && (!('lastDeliveryAt' in data) || isBoundedString(data.lastDeliveryAt, 64))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidWebhookDelivery(data) {
+      return data.keys().hasAll([
+          'id', 'deliveryId', 'ownerUid', 'webhookId', 'webhookName', 'targetUrl',
+          'eventType', 'status', 'httpStatus', 'durationMs', 'attemptCount',
+          'signature', 'responseSnippet', 'payloadSnippet', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'deliveryId', 'ownerUid', 'webhookId', 'webhookName', 'targetUrl',
+          'eventType', 'status', 'httpStatus', 'durationMs', 'attemptCount',
+          'signature', 'responseSnippet', 'payloadSnippet', 'createdAt', 'updatedAt'
+        ])
+        && data.id is number
+        && isValidId(data.deliveryId) && data.deliveryId.size() <= 64
+        && isValidId(data.ownerUid)
+        && data.webhookId is number
+        && isBoundedString(data.webhookName, 120)
+        && isBoundedNonEmptyString(data.targetUrl, 500)
+        && isBoundedNonEmptyString(data.eventType, 80)
+        && data.status in ['succeeded', 'failed']
+        && data.httpStatus is number && data.httpStatus >= 0 && data.httpStatus <= 599
+        && data.durationMs is number && data.durationMs >= 0
+        && data.attemptCount is number && data.attemptCount >= 1
+        && isBoundedString(data.signature, 200)
+        && isBoundedString(data.responseSnippet, 500)
+        && isBoundedString(data.payloadSnippet, 2000)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidApiKey(data) {
+      return data.keys().hasAll([
+          'id', 'ownerUid', 'name', 'keyPrefix', 'keyHash',
+          'permissions', 'products', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerUid', 'projectKey', 'name', 'keyPrefix', 'keyHash',
+          'permissions', 'products', 'status', 'lastUsedAt', 'createdAt', 'updatedAt'
+        ])
+        && data.id is number
+        && isValidId(data.ownerUid)
+        && (!('projectKey' in data) || isBoundedString(data.projectKey, 64))
+        && isBoundedNonEmptyString(data.name, 120)
+        && isBoundedNonEmptyString(data.keyPrefix, 32)
+        && isBoundedNonEmptyString(data.keyHash, 128)
+        && data.permissions is list && data.permissions.size() >= 1 && data.permissions.size() <= 10
+        && data.permissions[0] is string
+        && data.products is list && data.products.size() >= 1 && data.products.size() <= 15
+        && data.products[0] is string
+        && data.status in ['active', 'revoked']
+        && (!('lastUsedAt' in data) || isBoundedString(data.lastUsedAt, 64))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidNewsletterList(data) {
+      return data.keys().hasAll([
+          'id', 'listKey', 'ownerUid', 'name', 'description',
+          'doubleOptIn', 'welcomeEmailEnabled', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'listKey', 'ownerUid', 'projectKey', 'name', 'description',
+          'doubleOptIn', 'welcomeEmailEnabled', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.id is number
+        && isValidId(data.listKey) && data.listKey.size() <= 64
+        && isValidId(data.ownerUid)
+        && (!('projectKey' in data) || isBoundedString(data.projectKey, 64))
+        && isBoundedNonEmptyString(data.name, 120)
+        && isBoundedString(data.description, 500)
+        && data.doubleOptIn is bool
+        && data.welcomeEmailEnabled is bool
+        && data.status in ['active', 'paused']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPublicNewsletterList(data) {
+      return data.keys().hasAll(['listKey', 'listId', 'ownerUid', 'name', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['listKey', 'listId', 'ownerUid', 'name', 'status', 'createdAt', 'updatedAt'])
+        && isValidId(data.listKey) && data.listKey.size() <= 64
+        && data.listId is number
+        && isValidId(data.ownerUid)
+        && isBoundedNonEmptyString(data.name, 120)
+        && data.status in ['active', 'paused']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidNewsletterSubscriber(data) {
+      return data.keys().hasAll([
+          'id', 'ownerUid', 'listId', 'listKey', 'email', 'name',
+          'status', 'source', 'unsubscribeToken', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerUid', 'listId', 'listKey', 'email', 'name',
+          'status', 'source', 'unsubscribeToken', 'createdAt', 'updatedAt'
+        ])
+        && data.id is number
+        && isValidId(data.ownerUid)
+        && data.listId is number
+        && isValidId(data.listKey) && data.listKey.size() <= 64
+        && isBoundedNonEmptyString(data.email, 254)
+        && isBoundedString(data.name, 120)
+        && data.status in ['subscribed', 'unsubscribed', 'pending']
+        && isBoundedNonEmptyString(data.source, 64)
+        && isBoundedNonEmptyString(data.unsubscribeToken, 64)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidShortLink(data) {
+      return data.keys().hasAll([
+          'id', 'slug', 'ownerUid', 'title', 'targetUrl',
+          'clicks', 'isActive', 'expiresAt', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'slug', 'ownerUid', 'title', 'targetUrl',
+          'clicks', 'isActive', 'expiresAt', 'createdAt', 'updatedAt'
+        ])
+        && data.id is number
+        && isValidId(data.slug) && data.slug.size() <= 64
+        && isValidId(data.ownerUid)
+        && isBoundedString(data.title, 140)
+        && isBoundedNonEmptyString(data.targetUrl, 1000)
+        && data.clicks is number && data.clicks >= 0
+        && data.isActive is bool
+        && isBoundedString(data.expiresAt, 64)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidUtilityRecord(data) {
+      return data.keys().hasAll(['id', 'ownerUid', 'kind', 'title', 'summary', 'config', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'ownerUid', 'kind', 'title', 'summary', 'config', 'createdAt', 'updatedAt'])
+        && data.id is number
+        && isValidId(data.ownerUid)
+        && data.kind in ['qr', 'pdf']
+        && isBoundedNonEmptyString(data.title, 140)
+        && isBoundedString(data.summary, 400)
+        && data.config is map
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -747,6 +951,276 @@ service cloud.firestore {
           )
         );
       allow delete: if isSignedIn() && isValidId(memberId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 14. Projects Collection (Multi-Project & Domain Management)
+    match /projects/{projectId} {
+      allow get: if isSignedIn() && isValidId(projectId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(projectId)
+        && isValidProject(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (isAdmin() || incoming().ownerUid == request.auth.uid);
+      allow update: if isSignedIn()
+        && isValidId(projectId)
+        && isValidProject(incoming())
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().projectKey == existing().projectKey
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            existing().ownerUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'description', 'allowedDomains', 'verifiedDomains',
+              'enabledProducts', 'status', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isSignedIn() && isValidId(projectId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 15. Webhooks Collection (Signed Outbound Subscriptions)
+    match /webhooks/{webhookId} {
+      allow get: if isSignedIn() && isValidId(webhookId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(webhookId)
+        && isValidWebhook(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (isAdmin() || incoming().ownerUid == request.auth.uid);
+      allow update: if isSignedIn()
+        && isValidId(webhookId)
+        && isValidWebhook(incoming())
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            existing().ownerUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'url', 'events', 'signingSecret', 'isActive',
+              'projectKey', 'lastDeliveryStatus', 'lastDeliveryAt', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isSignedIn() && isValidId(webhookId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 16. Webhook Deliveries Collection
+    match /webhookDeliveries/{deliveryId} {
+      allow get: if isSignedIn() && isValidId(deliveryId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(deliveryId)
+        && isValidWebhookDelivery(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (isAdmin() || incoming().ownerUid == request.auth.uid);
+      allow update: if isSignedIn()
+        && isValidId(deliveryId)
+        && isValidWebhookDelivery(incoming())
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().deliveryId == existing().deliveryId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            existing().ownerUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'status', 'httpStatus', 'durationMs', 'attemptCount',
+              'signature', 'responseSnippet', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isSignedIn() && isValidId(deliveryId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 17. API Keys Collection (Hashed Only — Owner/Admin Only)
+    match /apiKeys/{keyId} {
+      allow get: if isSignedIn() && isValidId(keyId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(keyId)
+        && isValidApiKey(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (isAdmin() || incoming().ownerUid == request.auth.uid);
+      allow update: if isSignedIn()
+        && isValidId(keyId)
+        && isValidApiKey(incoming())
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            existing().ownerUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'keyPrefix', 'keyHash', 'permissions', 'products',
+              'projectKey', 'status', 'lastUsedAt', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isSignedIn() && isValidId(keyId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 18. Newsletter Lists Collection
+    match /newsletterLists/{listId} {
+      allow get: if isSignedIn() && isValidId(listId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(listId)
+        && isValidNewsletterList(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (isAdmin() || incoming().ownerUid == request.auth.uid);
+      allow update: if isSignedIn()
+        && isValidId(listId)
+        && isValidNewsletterList(incoming())
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().listKey == existing().listKey
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            existing().ownerUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'description', 'projectKey', 'doubleOptIn',
+              'welcomeEmailEnabled', 'status', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isSignedIn() && isValidId(listId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 19. Public Newsletter Lists Projection (Non-PII — Public Verification for Subscribe API)
+    match /publicNewsletterLists/{listKey} {
+      allow get: if isValidId(listKey) && (
+        resource == null
+        || existing().status == 'active'
+        || (isSignedIn() && existing().ownerUid == request.auth.uid)
+        || isAdmin()
+      );
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(listKey)
+        && isValidPublicNewsletterList(incoming())
+        && incoming().listKey == listKey
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (isAdmin() || incoming().ownerUid == request.auth.uid);
+      allow update: if isSignedIn()
+        && isValidId(listKey)
+        && isValidPublicNewsletterList(incoming())
+        && incoming().listKey == existing().listKey
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            existing().ownerUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'status', 'updatedAt'])
+          )
+        );
+      allow delete: if isSignedIn() && isValidId(listKey) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 20. Newsletter Subscribers Collection (Owner/Admin Read; Verified Public Subscribe Create)
+    match /newsletterSubscribers/{subId} {
+      allow get: if isSignedIn() && isValidId(subId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isValidId(subId)
+        && isValidNewsletterSubscriber(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (isSignedIn() && incoming().ownerUid == request.auth.uid)
+          || (
+            incoming().status in ['subscribed', 'pending']
+            && exists(/databases/$(database)/documents/publicNewsletterLists/$(incoming().listKey))
+            && get(/databases/$(database)/documents/publicNewsletterLists/$(incoming().listKey)).data.status == 'active'
+            && get(/databases/$(database)/documents/publicNewsletterLists/$(incoming().listKey)).data.ownerUid == incoming().ownerUid
+            && get(/databases/$(database)/documents/publicNewsletterLists/$(incoming().listKey)).data.listId == incoming().listId
+          )
+        );
+      allow update: if isSignedIn()
+        && isValidId(subId)
+        && isValidNewsletterSubscriber(incoming())
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().listKey == existing().listKey
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            existing().ownerUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'status', 'updatedAt'])
+          )
+        );
+      allow delete: if isSignedIn() && isValidId(subId) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 21. URL Shortener Links Collection (Public GET for Active Redirects; Owner CRUD)
+    match /shortLinks/{slug} {
+      allow get: if isValidId(slug) && (
+        resource == null
+        || existing().isActive == true
+        || (isSignedIn() && existing().ownerUid == request.auth.uid)
+        || isAdmin()
+      );
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(slug)
+        && isValidShortLink(incoming())
+        && incoming().slug == slug
+        && incoming().clicks == 0
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (isAdmin() || incoming().ownerUid == request.auth.uid);
+      allow update: if isValidId(slug)
+        && isValidShortLink(incoming())
+        && incoming().slug == existing().slug
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            isSignedIn()
+            && existing().ownerUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'targetUrl', 'isActive', 'expiresAt', 'updatedAt'])
+          )
+          || (
+            existing().isActive == true
+            && incoming().clicks == existing().clicks + 1
+            && incoming().diff(existing()).affectedKeys().hasOnly(['clicks', 'updatedAt'])
+          )
+        );
+      allow delete: if isSignedIn() && isValidId(slug) && (existing().ownerUid == request.auth.uid || isAdmin());
+    }
+
+    // 22. Developer Utility Records (QR & PDF History — Owner/Admin Only)
+    match /utilityRecords/{recordId} {
+      allow get: if isSignedIn() && isValidId(recordId) && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().ownerUid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && isValidId(recordId)
+        && isValidUtilityRecord(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (isAdmin() || incoming().ownerUid == request.auth.uid);
+      allow update: if false;
+      allow delete: if isSignedIn() && isValidId(recordId) && (existing().ownerUid == request.auth.uid || isAdmin());
     }
   }
 }

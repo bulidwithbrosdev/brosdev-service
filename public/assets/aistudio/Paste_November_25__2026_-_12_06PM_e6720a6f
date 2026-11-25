@@ -1,0 +1,1598 @@
+# MASTER DEVELOPMENT PROMPT
+# BROsDEV DEVELOPER SERVICES — PHASE 1
+
+## 1. ROLE AND PROJECT OVERVIEW
+
+Act as a senior SaaS architect, full-stack developer, backend engineer, Firebase specialist, API architect, security engineer and professional UI/UX designer.
+
+Build a complete, production-oriented SaaS platform named:
+
+**BrosDev Developer Services**
+
+Company: BrosDev IT Engineering Studio.
+
+The platform provides ready-to-integrate developer tools, APIs, website functionality and backend services.
+
+Our customers include:
+- Web developers
+- Freelancers
+- Software development companies
+- Digital agencies
+- Startups
+- SaaS companies
+- Small and medium-sized businesses
+
+The main concept is to allow developers to add functionality to their websites without building the entire backend themselves.
+
+For example, a customer should be able to create a contact form inside our dashboard, copy the generated HTML code, paste it into their website and receive submissions directly inside the BrosDev dashboard.
+
+The platform must support different integration methods:
+
+1. Native HTML
+2. JavaScript Fetch API
+3. REST API
+4. JavaScript Embed
+5. Hosted URLs
+6. Webhooks
+
+The product must be lightweight, fast, secure, affordable and easy to integrate.
+
+Do not create a static demonstration website. Build a working SaaS application with real authentication, database operations, API endpoints, integrations and customer management.
+
+---
+
+# 2. TECHNOLOGY STACK
+
+Use this exact technology stack.
+
+### Frontend
+- HTML5
+- CSS3
+- Vanilla JavaScript
+- Responsive design
+- Reusable UI components
+
+Avoid unnecessary frontend frameworks.
+
+### Backend
+- Node.js
+- Express.js
+- TypeScript
+- REST API architecture
+- Modular backend structure
+- Vercel-compatible serverless execution
+
+### Database
+- Firebase Firestore
+- Firebase Admin SDK
+- Firestore transactions
+- Firestore indexes
+
+Do not use PostgreSQL, MySQL, Prisma or MongoDB.
+
+### Authentication
+- Firebase Authentication
+- Firebase Admin SDK
+- Secure session cookies or verified Firebase ID tokens
+- Email verification
+- Password reset
+
+### File Storage
+- Firebase Storage
+- Secure upload and download access
+- File size and MIME restrictions
+
+### Email
+- Resend API
+- Email templates
+- Delivery logging
+
+### Payment
+- Razorpay
+- Subscription management
+- Payment verification
+- Razorpay webhooks
+
+### Hosting and Infrastructure
+- Vercel for frontend and backend deployment
+- Cloudflare for DNS and domain management
+- GitHub for source control
+
+### API Documentation
+- OpenAPI
+- Swagger UI
+
+### Additional Requirements
+- Environment variables
+- Structured logging
+- Error handling
+- Input validation with Zod
+- Automated tests
+- Rate limiting
+- CORS protection
+- Security headers
+
+Use compatible, maintained package versions.
+
+---
+
+# 3. APPLICATION ARCHITECTURE
+
+Use a modular monolithic architecture.
+
+The application should initially be deployed as one Vercel project.
+
+Suggested domains:
+
+- brosdev.info — Main marketing website
+- app.brosdev.info — Customer dashboard
+- api.brosdev.info — Main REST API
+- forms.brosdev.info — Form submission endpoints
+- files.brosdev.info — File delivery
+- docs.brosdev.info — API documentation
+- hooks.brosdev.info — Webhook endpoints
+
+These domains may route to the same Vercel deployment initially.
+
+Keep the application organized into independent modules so services can be separated later if required.
+
+Architecture:
+
+Customer Website
+       |
+       v
+BrosDev APIs / HTML Integrations
+       |
+       v
+Vercel Backend
+       |
+       +---- Authentication
+       |
+       +---- Project Management
+       |
+       +---- Forms Service
+       |
+       +---- Email Service
+       |
+       +---- Webhook Service
+       |
+       +---- Newsletter Service
+       |
+       +---- File Service
+       |
+       +---- Billing Service
+       |
+       v
+Firebase Firestore
+       |
+       +---- Firebase Authentication
+       |
+       +---- Firebase Storage
+       |
+       v
+External Services
+       |
+       +---- Resend
+       +---- Razorpay
+
+Important Vercel requirements:
+
+- Use Vercel-compatible serverless functions.
+- Adapt Express routing to serverless execution.
+- Do not depend on persistent local files.
+- Do not assume a process remains alive after an HTTP request.
+- Do not use PM2, Nginx or a permanently running Express server.
+- Do not run background jobs using unreliable fire-and-forget promises.
+- Use durable job records and scheduled processing for asynchronous operations.
+- Use idempotency to prevent duplicate email and webhook deliveries.
+- Respect Vercel function execution and payload limits.
+- Use Vercel Cron or an appropriate durable job-processing service for scheduled work.
+- Design for retries and partial failures.
+
+---
+
+# 4. PHASE 1 PRODUCT CATALOGUE
+
+Build the following products.
+
+### Priority 1 — Core Products
+
+1. Form Submission API
+2. Email Notification Service
+3. Webhook Service
+
+### Priority 2 — Additional Services
+
+4. Newsletter Subscription API
+5. File Upload API
+
+### Priority 3 — Developer Utilities
+
+6. QR Code Generator API
+7. URL Shortener API
+8. PDF Generation API
+
+Implement Priority 1 fully before starting the remaining products.
+
+Every product should have:
+- Product description
+- Dashboard interface
+- Configuration
+- API endpoints where applicable
+- Usage tracking
+- Documentation
+- Integration examples
+- Error handling
+- Plan limits
+
+Do not create fake product functionality just to populate the dashboard.
+
+Products not yet implemented should display an honest Coming Soon state.
+
+---
+
+# 5. WEBSITE DESIGN AND BRAND IDENTITY
+
+Create a professional developer SaaS interface.
+
+Brand name: BrosDev Developer Services.
+
+Brand colors:
+
+- Primary red: #A90706
+- Black: #111111
+- White: #FFFFFF
+- Light gray: #F5F5F5
+
+Use a light theme as the default.
+
+Design references:
+- Stripe Dashboard
+- Linear
+- Vercel
+- Supabase
+- Resend
+
+Design direction:
+- Minimal
+- Modern
+- Professional
+- Developer-focused
+- Clean typography
+- Consistent spacing
+- Subtle borders
+- Responsive layouts
+- Easy navigation
+
+Avoid:
+- Black/dark default theme
+- Excessive gradients
+- Unnecessary animations
+- Oversized cards
+- Unnecessary visual decoration
+- Heavy frontend libraries
+
+The application must work on desktop, tablet and mobile.
+
+Create reusable:
+- Buttons
+- Inputs
+- Dropdowns
+- Modals
+- Tables
+- Cards
+- Navigation
+- Sidebar
+- Notifications
+- Toast messages
+- Loading indicators
+- Empty states
+- Confirmation dialogs
+
+All interactive elements must work.
+
+---
+
+# 6. PUBLIC WEBSITE
+
+Create a professional marketing website.
+
+Pages:
+
+1. Home
+2. Products
+3. Pricing
+4. Documentation
+5. About
+6. Contact
+7. Login
+8. Register
+9. Terms and Conditions
+10. Privacy Policy
+
+Homepage sections:
+
+- Hero section
+- Main product introduction
+- Developer tools overview
+- How it works
+- Integration methods
+- Key features
+- Pricing
+- Documentation preview
+- Frequently asked questions
+- Call to action
+- Footer
+
+Primary message:
+
+"Developer tools and backend services, ready to integrate."
+
+Primary CTA:
+"Get Started"
+
+Secondary CTA:
+"Explore APIs"
+
+Do not use random stock photos of people.
+
+Use simple product illustrations, API examples and clean interface previews.
+
+---
+
+# 7. AUTHENTICATION SYSTEM
+
+Implement complete customer authentication.
+
+Features:
+
+- Registration
+- Login
+- Logout
+- Email verification
+- Password reset
+- Account profile
+- Password management
+- Session management
+- Protected dashboard
+- Organization creation
+- Organization membership
+- Role-based permissions
+
+Use Firebase Authentication.
+
+For backend protected routes, verify authentication using Firebase Admin SDK.
+
+Never trust user IDs or organization IDs supplied by the frontend without server-side authorization checks.
+
+Use secure HttpOnly cookies when implementing cookie-based sessions.
+
+Configure:
+- Secure cookies in production
+- SameSite protection
+- CSRF protection for cookie-authenticated state changes
+- Session expiration
+- Logout and session revocation where appropriate
+
+Support roles:
+
+- Owner
+- Admin
+- Developer
+- Viewer
+
+Every organization must have isolated data.
+
+---
+
+# 8. CUSTOMER DASHBOARD
+
+Build a complete customer dashboard.
+
+Sidebar navigation:
+
+1. Overview
+2. Projects
+3. Products
+4. Forms
+5. Submissions
+6. Email Services
+7. Newsletter
+8. File Storage
+9. Webhooks
+10. API Keys
+11. QR Code Generator
+12. URL Shortener
+13. PDF Generator
+14. Analytics
+15. Usage & Limits
+16. Plans & Billing
+17. Documentation
+18. Account Settings
+
+Dashboard overview:
+
+Display real information from Firebase.
+
+Statistics:
+
+- Total projects
+- Active products
+- Total API requests
+- Form submissions
+- Emails sent
+- Webhook deliveries
+- Files uploaded
+- Current plan
+- Monthly usage
+- Usage limits
+- Recent activities
+
+Charts:
+
+- API requests over time
+- Form submissions over time
+- Email usage
+- Product-wise usage
+
+Do not hardcode statistics.
+
+Create useful empty states for new customers.
+
+---
+
+# 9. ORGANIZATION AND PROJECT MANAGEMENT
+
+Create a multi-tenant organization system.
+
+Users should be able to:
+
+- Create an organization
+- Edit organization details
+- Invite members
+- Manage member roles
+- Remove members
+- Create projects
+- Edit projects
+- Delete projects
+- Enable products
+- Configure project settings
+- Add website domains
+- Verify website domains
+- View project analytics
+
+Each project must have:
+- Project ID
+- Project name
+- Description
+- Organization ID
+- Allowed domains
+- Enabled products
+- API keys
+- Usage statistics
+- Creation date
+
+Implement organization and project-level data authorization.
+
+---
+
+# 10. FORM SUBMISSION API
+
+This is the primary product.
+
+Build a complete form builder and form submission service.
+
+### Form management
+
+Customers can:
+
+- Create forms
+- Edit forms
+- Delete forms
+- Duplicate forms
+- Activate forms
+- Deactivate forms
+- Configure form notifications
+- Configure webhooks
+- Configure success messages
+- Configure redirect URLs
+- Set allowed domains
+- Configure submission limits
+- View submission history
+
+### Form builder
+
+Support these fields:
+
+- Short text
+- Long text
+- Email
+- Phone
+- Number
+- Dropdown
+- Radio buttons
+- Checkboxes
+- Date
+- File upload
+- Hidden field
+
+Each field must support:
+- Label
+- Name
+- Placeholder
+- Required setting
+- Default value
+- Validation rules
+
+Allow field ordering and editing.
+
+Generate a unique public form ID.
+
+Example:
+
+frm_7y4ecagi0q56
+
+The form ID identifies the form but is not a secret API credential.
+
+### Integration method A: Native HTML
+
+Generate HTML integration code automatically.
+
+Example:
+
+<form action="https://forms.brosdev.info/api/submit/FORM_ID" method="POST">
+
+  <input
+    type="text"
+    name="_gotcha"
+    hidden
+    tabindex="-1"
+    autocomplete="off"
+  >
+
+  <label>
+    Full Name
+    <input type="text" name="name" required>
+  </label>
+
+  <label>
+    Work Email
+    <input type="email" name="email" required>
+  </label>
+
+  <label>
+    Message
+    <textarea name="message" required></textarea>
+  </label>
+
+  <button type="submit">Submit</button>
+
+</form>
+
+Requirements:
+
+- Must work without JavaScript.
+- Must accept native browser form submissions.
+- Must validate fields on the server.
+- Must save submissions to Firestore.
+- Must trigger configured notification jobs.
+- Must support a success response.
+- Must support configurable redirects.
+- Must prevent duplicate or abusive submissions.
+
+Use a proper response or redirect strategy for HTML requests.
+
+### Integration method B: JavaScript Fetch
+
+Generate ready-to-copy Fetch examples.
+
+Include:
+- JSON submission
+- Loading state
+- Success response
+- Error response
+- Validation errors
+- CORS instructions
+
+### Integration method C: REST API
+
+Display:
+- Endpoint
+- Method
+- Headers
+- Request body
+- Response body
+- Error codes
+- Usage limits
+
+### Integration method D: JavaScript Embed
+
+Create a lightweight embed script.
+
+Requirements:
+- Load only when needed.
+- Do not require React or another framework.
+- Render the form using lightweight JavaScript.
+- Support styling options.
+- Support responsive layouts.
+- Display success and error messages.
+
+### Submission management
+
+Dashboard must display:
+
+- Submission ID
+- Form name
+- Submission date
+- Submitted fields
+- Submission status
+- Spam status
+
+Features:
+
+- Search
+- Filtering
+- Date selection
+- View details
+- Mark as read
+- Export CSV
+- Delete submissions
+- Pagination
+
+Use Firestore queries and indexes efficiently.
+
+Do not load every submission at once.
+
+---
+
+# 11. EMAIL NOTIFICATION SERVICE
+
+Integrate Resend using server-side credentials.
+
+Features:
+
+- Configure sender name
+- Configure sender email
+- Configure reply-to address
+- Configure recipient emails
+- Configure email subject
+- Configure email templates
+- Enable and disable notifications
+- Test email delivery
+- View email logs
+- Track delivery status
+- Track failed deliveries
+
+Support form submission notifications.
+
+Email template variables should support dynamic submission data.
+
+Example:
+
+New submission received from {{name}}.
+
+Email logs must store:
+- Organization ID
+- Project ID
+- Form ID
+- Recipient
+- Provider message ID
+- Delivery status
+- Error details
+- Timestamp
+
+Security:
+
+- Never expose Resend API keys.
+- Never create an unrestricted public email relay.
+- Enforce verified sending domains or controlled platform sending.
+- Apply quotas and abuse protection.
+- Maintain suppression and bounce handling where supported.
+
+---
+
+# 12. WEBHOOK SERVICE
+
+Allow customers to configure webhook endpoints.
+
+Features:
+
+- Create webhook
+- Edit webhook
+- Delete webhook
+- Activate/deactivate webhook
+- Configure event subscriptions
+- Send test webhook
+- View delivery history
+- Retry failed deliveries
+- View HTTP response codes
+- View delivery timestamps
+
+Supported events:
+
+- form.submission.created
+- form.submission.updated
+- file.uploaded
+- newsletter.subscriber.created
+
+Use HMAC signatures.
+
+Include:
+- Timestamp
+- Event ID
+- Signature
+- JSON payload
+
+Webhook delivery requirements:
+
+- Durable job records
+- Retry mechanism
+- Exponential backoff
+- Idempotency
+- Delivery status tracking
+- Timeout handling
+
+Implement SSRF protections.
+
+Block requests to:
+- Localhost
+- Private IP addresses
+- Cloud metadata endpoints
+- Unsafe redirect destinations
+
+Do not let customers use webhooks to access internal infrastructure.
+
+---
+
+# 13. NEWSLETTER SUBSCRIPTION API
+
+Build a newsletter management module.
+
+Features:
+
+- Create subscriber lists
+- Add subscribers
+- Remove subscribers
+- Unsubscribe
+- Confirm subscriptions
+- Prevent duplicate emails
+- Manage subscriber status
+- Search subscribers
+- Export CSV
+- View subscriber counts
+
+Provide:
+- HTML integration
+- Fetch integration
+- REST API
+- API documentation
+
+Implement appropriate consent and unsubscribe handling.
+
+---
+
+# 14. FILE UPLOAD API
+
+Use Firebase Storage.
+
+Features:
+
+- Upload files
+- List files
+- Download files
+- Delete files
+- Configure allowed file types
+- Configure file size limits
+- Generate secure upload URLs where supported
+- Manage file metadata
+
+Store metadata in Firestore.
+
+Validate file content and MIME type where practical.
+
+Use secure storage rules and backend authorization.
+
+Never make private customer files publicly accessible by default.
+
+---
+
+# 15. DEVELOPER UTILITIES
+
+Create these additional modules after core functionality works.
+
+### QR Code Generator
+
+Features:
+- Text to QR
+- URL to QR
+- Custom size
+- PNG export
+- SVG export
+- QR generation API
+
+### URL Shortener
+
+Features:
+- Generate short URL
+- Custom slug
+- Redirect handling
+- Click count
+- Link status
+- Expiration settings
+- Basic analytics
+
+### PDF Generator
+
+Features:
+- Generate PDF from structured input
+- Templates
+- Download PDF
+- API integration
+- Usage tracking
+
+These modules must use actual implementations and real database persistence.
+
+If time or budget is insufficient, leave these as clearly labeled future modules rather than generating fake functionality.
+
+---
+
+# 16. API KEY MANAGEMENT
+
+Create an API key management dashboard.
+
+Features:
+
+- Generate key
+- Name key
+- View creation date
+- View last-used date
+- Revoke key
+- Rotate key
+- Configure permissions
+- Configure product access
+
+Requirements:
+
+- Show full secret only once.
+- Store hashed API secrets.
+- Support secure verification.
+- Never expose secret values in dashboard API responses.
+- Support project-level permissions.
+- Record key usage.
+
+Do not put private API keys in browser-side JavaScript.
+
+Public form IDs and private management API keys must remain separate.
+
+---
+
+# 17. USAGE AND ANALYTICS
+
+Track:
+
+- API requests
+- Successful requests
+- Failed requests
+- Form submissions
+- Emails sent
+- Webhook deliveries
+- Files uploaded
+- Storage usage
+- Newsletter subscribers
+
+Provide:
+
+- Daily usage
+- Monthly usage
+- Project-wise usage
+- Product-wise usage
+- Usage percentage
+- Plan limits
+- Usage warning notifications
+
+Use efficient Firestore aggregation strategies.
+
+Avoid excessive document reads and writes.
+
+Use atomic transactions or carefully designed counters where required.
+
+Make usage records auditable.
+
+---
+
+# 18. SUBSCRIPTION AND BILLING
+
+Create configurable subscription plans.
+
+Initial sample pricing:
+
+FREE:
+₹0/month
+100 form submissions
+1 project
+Basic notifications
+
+STARTER:
+₹199/month
+1,000 submissions
+3 projects
+
+PROFESSIONAL:
+₹499/month
+5,000 submissions
+10 projects
+
+BUSINESS:
+₹999/month
+20,000 submissions
+25 projects
+
+AGENCY:
+₹1,999/month
+50,000 submissions
+Multiple projects
+
+These prices and limits must be configurable from the admin panel.
+
+Integrate Razorpay.
+
+Features:
+
+- Plan selection
+- Checkout
+- Payment verification
+- Subscription activation
+- Payment history
+- Renewal tracking
+- Cancellation
+- Failed payment handling
+- Webhook processing
+
+Verify Razorpay signatures server-side.
+
+Never trust frontend payment success responses.
+
+Enforce plan limits on backend endpoints.
+
+Do not provide unlimited usage by default.
+
+---
+
+# 19. ADMIN PANEL
+
+Create a separate administrator interface.
+
+Admin features:
+
+- Overview
+- Customers
+- Organizations
+- Projects
+- Products
+- Forms
+- Submissions
+- Email logs
+- Webhook logs
+- API usage
+- Plans
+- Subscriptions
+- Payments
+- Storage
+- System configuration
+- Audit logs
+
+Admin actions:
+
+- View customers
+- Suspend accounts
+- Restore accounts
+- View organization usage
+- Manage plans
+- Change limits
+- Monitor delivery failures
+- View abuse reports
+- Manage product availability
+
+Admin permissions must be enforced on the backend.
+
+Never trust a frontend role value.
+
+Use protected administrator accounts and audit all privileged actions.
+
+---
+
+# 20. FIRESTORE DATABASE DESIGN
+
+Use Firebase Firestore.
+
+Design the database for a multi-tenant SaaS platform.
+
+Suggested collection structure:
+
+users/{userId}
+
+organizations/{organizationId}
+
+organizations/{organizationId}/members/{memberId}
+
+organizations/{organizationId}/projects/{projectId}
+
+organizations/{organizationId}/domains/{domainId}
+
+organizations/{organizationId}/apiKeys/{apiKeyId}
+
+organizations/{organizationId}/forms/{formId}
+
+organizations/{organizationId}/forms/{formId}/fields/{fieldId}
+
+organizations/{organizationId}/forms/{formId}/submissions/{submissionId}
+
+organizations/{organizationId}/emailLogs/{emailLogId}
+
+organizations/{organizationId}/newsletterLists/{listId}
+
+organizations/{organizationId}/subscribers/{subscriberId}
+
+organizations/{organizationId}/files/{fileId}
+
+organizations/{organizationId}/webhooks/{webhookId}
+
+organizations/{organizationId}/webhookDeliveries/{deliveryId}
+
+organizations/{organizationId}/subscriptions/{subscriptionId}
+
+organizations/{organizationId}/usageRecords/{usageRecordId}
+
+organizations/{organizationId}/auditLogs/{auditLogId}
+
+system/plans
+
+system/settings
+
+system/jobs
+
+system/idempotencyKeys
+
+Design appropriate:
+- Document IDs
+- Field types
+- Timestamps
+- Ownership references
+- Query patterns
+- Composite indexes
+- Retention policies
+
+Important:
+
+- Never store all submissions inside one growing document.
+- Use separate documents for submissions.
+- Avoid unbounded arrays.
+- Paginate large collections.
+- Use server timestamps.
+- Use Firestore transactions for critical updates.
+- Use batched writes where appropriate.
+- Prevent cross-organization data access.
+- Minimize unnecessary reads and writes.
+- Design counters to avoid excessive write contention.
+
+Create and document the required Firestore indexes.
+
+---
+
+# 21. FIREBASE SECURITY
+
+Use Firebase Admin SDK on the backend.
+
+Implement:
+- Firebase Authentication verification
+- Organization authorization
+- Project authorization
+- Role-based access
+- Firestore Security Rules
+- Firebase Storage Security Rules
+
+Client-side users must not be able to bypass backend authorization.
+
+Keep service account credentials on the server.
+
+Use Vercel environment variables or supported secure credential mechanisms.
+
+Never commit secrets to GitHub.
+
+Provide example configuration using .env.example with placeholder values only.
+
+---
+
+# 22. VERCEL DEPLOYMENT
+
+Build the project for Vercel deployment.
+
+Requirements:
+
+- Correct Vercel configuration
+- Serverless API routes
+- Environment variables
+- Frontend deployment
+- Backend deployment
+- Domain configuration
+- Production and preview environments
+- Error handling
+- Function logging
+- Deployment instructions
+
+Create a clean project structure compatible with Vercel.
+
+Do not assume that local filesystem writes persist between function invocations.
+
+Do not assume long-running background workers.
+
+For scheduled work, design a durable job system using Firestore job records and a secured scheduled dispatcher, or another explicitly configured durable queue service.
+
+Make retries safe and idempotent.
+
+Document function duration and payload constraints relevant to the selected Vercel plan.
+
+---
+
+# 23. SECURITY REQUIREMENTS
+
+Implement:
+
+- Password security
+- Firebase token verification
+- Secure session management
+- CSRF protection where applicable
+- XSS protection
+- Input validation
+- CORS restrictions
+- Rate limiting
+- Request size limits
+- API key hashing
+- Webhook signature verification
+- SSRF protection
+- File upload validation
+- Organization data isolation
+- Payment signature verification
+- Audit logs
+- Error handling
+
+Use Zod to validate API inputs.
+
+Apply rate limits by IP, project and API key as appropriate.
+
+Use a distributed rate-limiting strategy if serverless instances make in-memory counters unreliable.
+
+Do not expose internal error traces to users.
+
+---
+
+# 24. PERFORMANCE REQUIREMENTS
+
+Performance is a core selling point.
+
+Requirements:
+
+- Native HTML forms must not require JavaScript.
+- Keep embed scripts lightweight.
+- Avoid heavy frontend dependencies.
+- Minimize database reads.
+- Paginate large datasets.
+- Optimize Firestore queries.
+- Cache suitable public assets.
+- Avoid unnecessary API calls.
+- Load dashboard modules when required.
+- Compress suitable responses.
+- Keep API response structures small.
+- Avoid oversized file uploads through serverless functions.
+
+Measure performance using real tests.
+
+Do not make unsupported claims such as guaranteed zero latency.
+
+---
+
+# 25. PROJECT FOLDER STRUCTURE
+
+Create a maintainable structure similar to:
+
+brosdev-platform/
+
+  api/
+    index.ts
+
+  src/
+    config/
+      firebase.ts
+      resend.ts
+      razorpay.ts
+      environment.ts
+
+    middleware/
+      authentication.ts
+      authorization.ts
+      validation.ts
+      rateLimit.ts
+      errorHandler.ts
+
+    modules/
+
+      auth/
+      users/
+      organizations/
+      projects/
+      forms/
+      submissions/
+      emails/
+      webhooks/
+      newsletters/
+      files/
+      apiKeys/
+      billing/
+      analytics/
+      admin/
+
+    jobs/
+      emailDispatcher.ts
+      webhookDispatcher.ts
+      cleanupDispatcher.ts
+
+    services/
+    utils/
+    types/
+
+    app.ts
+
+  public/
+    index.html
+    login.html
+    register.html
+    dashboard/
+    assets/
+      css/
+      js/
+      images/
+
+  docs/
+    api/
+    integration/
+
+  tests/
+
+  firebase/
+    firestore.rules
+    firestore.indexes.json
+    storage.rules
+
+  vercel.json
+  package.json
+  tsconfig.json
+  .env.example
+  README.md
+
+Adapt this structure as needed for the actual Vercel deployment.
+
+Keep routes, controllers, validation, services and data-access logic separated.
+
+---
+
+# 26. API ROUTE STRUCTURE
+
+Use versioned API routes.
+
+AUTHENTICATION:
+
+POST /api/v1/auth/register
+
+POST /api/v1/auth/login
+
+POST /api/v1/auth/logout
+
+POST /api/v1/auth/forgot-password
+
+POST /api/v1/auth/reset-password
+
+GET /api/v1/auth/me
+
+PROJECTS:
+
+GET /api/v1/projects
+
+POST /api/v1/projects
+
+GET /api/v1/projects/:id
+
+PUT /api/v1/projects/:id
+
+DELETE /api/v1/projects/:id
+
+FORMS:
+
+GET /api/v1/forms
+
+POST /api/v1/forms
+
+GET /api/v1/forms/:id
+
+PUT /api/v1/forms/:id
+
+DELETE /api/v1/forms/:id
+
+PUBLIC SUBMISSIONS:
+
+POST /api/submit/:formId
+
+SUBMISSIONS:
+
+GET /api/v1/forms/:id/submissions
+
+GET /api/v1/submissions/:id
+
+DELETE /api/v1/submissions/:id
+
+EMAIL:
+
+GET /api/v1/email/logs
+
+POST /api/v1/email/test
+
+WEBHOOKS:
+
+GET /api/v1/webhooks
+
+POST /api/v1/webhooks
+
+PUT /api/v1/webhooks/:id
+
+DELETE /api/v1/webhooks/:id
+
+POST /api/v1/webhooks/:id/test
+
+GET /api/v1/webhooks/:id/deliveries
+
+API KEYS:
+
+GET /api/v1/api-keys
+
+POST /api/v1/api-keys
+
+DELETE /api/v1/api-keys/:id
+
+USAGE:
+
+GET /api/v1/usage
+
+GET /api/v1/analytics
+
+BILLING:
+
+GET /api/v1/billing/plans
+
+GET /api/v1/billing/subscription
+
+POST /api/v1/billing/checkout
+
+POST /api/v1/billing/webhook
+
+Use consistent JSON responses and proper HTTP status codes.
+
+Document all endpoints.
+
+---
+
+# 27. TESTING
+
+Create automated tests for:
+
+- Registration
+- Login
+- Authorization
+- Organization isolation
+- Project management
+- Form creation
+- HTML form submission
+- Fetch submission
+- Form validation
+- Submission storage
+- Resend integration
+- Webhook delivery
+- Webhook signatures
+- API key verification
+- Usage limits
+- Razorpay verification
+- File upload restrictions
+
+Also perform:
+
+- API integration tests
+- Firestore emulator tests where appropriate
+- Security tests
+- Error-handling tests
+- Load tests for public submission endpoints
+
+Never use production credentials in automated tests.
+
+---
+
+# 28. IMPLEMENTATION MILESTONES
+
+Develop the platform in the following order.
+
+MILESTONE 1 — FOUNDATION
+
+- Repository setup
+- TypeScript setup
+- Express setup
+- Vercel configuration
+- Firebase configuration
+- Firestore initialization
+- Environment variables
+- Logging
+- Error handling
+
+MILESTONE 2 — AUTHENTICATION
+
+- Registration
+- Login
+- Logout
+- Email verification
+- Password reset
+- Protected dashboard
+- Organizations
+- User roles
+
+MILESTONE 3 — PROJECT MANAGEMENT
+
+- Project creation
+- Project editing
+- Domain configuration
+- Product activation
+- API key foundation
+
+MILESTONE 4 — FORM BUILDER
+
+- Form creation
+- Form editing
+- Field builder
+- Field validation
+- Form configuration
+- Unique form IDs
+
+MILESTONE 5 — FORM SUBMISSION ENGINE
+
+- Native HTML integration
+- JavaScript Fetch integration
+- REST integration
+- Embed integration
+- Firestore persistence
+- Submission history
+- CSV export
+- Redirect and success responses
+
+MILESTONE 6 — EMAIL SERVICE
+
+- Resend configuration
+- Email templates
+- Notification configuration
+- Delivery logs
+- Failure handling
+- Spam protection
+
+MILESTONE 7 — WEBHOOK SERVICE
+
+- Webhook management
+- Event configuration
+- Signed payloads
+- Durable delivery jobs
+- Retries
+- Delivery logs
+
+MILESTONE 8 — ADDITIONAL SERVICES
+
+- Newsletter
+- File uploads
+- QR generator
+- URL shortener
+- PDF generator
+
+MILESTONE 9 — SAAS MANAGEMENT
+
+- API key management
+- Usage tracking
+- Analytics
+- Pricing plans
+- Razorpay
+- Admin panel
+
+MILESTONE 10 — PRODUCTION LAUNCH
+
+- Security review
+- Performance testing
+- Deployment
+- Domain setup
+- Documentation
+- Backup and recovery plan
+- Customer onboarding
+
+---
+
+# 29. DEVELOPMENT RULES
+
+Follow these rules throughout development.
+
+1. Never generate the entire application as one file.
+2. Never use hardcoded dashboard data.
+3. Never create buttons that do nothing.
+4. Never leave important features as TODO placeholders.
+5. Never expose private credentials.
+6. Never trust frontend authorization.
+7. Never skip server-side validation.
+8. Never allow customers to access another organization's data.
+9. Never use fake API responses as production implementations.
+10. Never create an unrestricted email-sending service.
+11. Never rely on in-memory serverless state for persistent data.
+12. Never assume a Vercel function can run forever.
+13. Build reusable modules.
+14. Write clean TypeScript.
+15. Document environment variables.
+16. Test every completed milestone.
+17. Keep deployment instructions updated.
+
+If a feature needs an external credential, create the configuration logic and clearly document the required setup.
+
+---
+
+# 30. FINAL DELIVERABLES
+
+Deliver the following:
+
+1. Complete source code
+2. Public marketing website
+3. Customer dashboard
+4. Admin dashboard
+5. Firebase Authentication
+6. Firestore database structure
+7. Firestore security rules
+8. Firebase Storage rules
+9. Firestore indexes
+10. Express backend
+11. Form Submission API
+12. Email Notification Service
+13. Webhook Service
+14. Integration code generator
+15. API documentation
+16. Usage tracking
+17. Razorpay billing integration
+18. Automated tests
+19. Environment template
+20. Vercel deployment configuration
+21. Cloudflare domain instructions
+22. Firebase setup instructions
+23. Production launch checklist
+
+---
+
+# 31. FIRST RELEASE ACCEPTANCE CRITERIA
+
+The first working release is not complete until this scenario works:
+
+1. A developer opens BrosDev.
+2. The developer registers an account.
+3. The developer verifies their email.
+4. The developer logs in.
+5. The developer creates a project.
+6. The developer creates a contact form.
+7. BrosDev generates an HTML integration code.
+8. The developer copies that code.
+9. The developer pastes it into their own website.
+10. A visitor fills in the form.
+11. The visitor submits the form.
+12. BrosDev validates the submission.
+13. The submission is saved in Firestore.
+14. The dashboard displays the submission.
+15. Resend sends the configured notification.
+16. A configured webhook receives the event.
+17. The customer can inspect submission and delivery history.
+
+All of these operations must work using the actual deployed application and real Firebase data.
+
+**Start by designing the complete architecture, Firestore database schema, folder structure and Vercel deployment configuration. Then implement Milestone 1 and continue sequentially. Do not skip testing between milestones.**
