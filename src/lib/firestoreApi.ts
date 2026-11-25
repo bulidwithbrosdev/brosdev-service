@@ -1602,7 +1602,11 @@ export async function handleFirestoreApi<T = any>(
         error: 'Email service unreachable',
       };
       try {
+        const secretCfg = await getSetting('resend_secret').catch(() => null);
+        const storedKey = typeof secretCfg?.apiKey === 'string' ? secretCfg.apiKey.trim() : '';
+
         sendResult = await serverBackendFetch('/api/resend/send', {
+          ...(storedKey ? { apiKey: storedKey } : {}),
           to: form.emailConfig.recipients,
           subject,
           html,
@@ -2180,7 +2184,11 @@ export async function handleFirestoreApi<T = any>(
           <div style="padding:10px 14px;background:#FAFAFA;border:1px solid #E5E5E5;border-radius:6px;font-family:monospace;font-size:12px;color:#111111;">Invite Code: ${inviteToken}</div>
         </div>
       </div>`;
+      const secretCfg = await getSetting('resend_secret').catch(() => null);
+      const storedKey = typeof secretCfg?.apiKey === 'string' ? secretCfg.apiKey.trim() : '';
+
       const res = await serverBackendFetch<{ status?: string }>('/api/resend/send', {
+        ...(storedKey ? { apiKey: storedKey } : {}),
         to: [memberEmail],
         subject: `Invitation to join ${String(userDoc.displayName || 'BrosDev Forms')} workspace (${accountId})`,
         html: inviteHtml,
@@ -2662,6 +2670,8 @@ export async function handleFirestoreApi<T = any>(
           value: { apiKey: incomingKey },
           updatedAt: serverTimestamp(),
         });
+        // Cache key immediately on server
+        await serverBackendFetch('/api/resend/test-connection', { apiKey: incomingKey }).catch(() => {});
       }
       const nextValue = {
         ...current,
@@ -2687,13 +2697,15 @@ export async function handleFirestoreApi<T = any>(
         getSetting('resend_secret'),
       ]);
       const storedKey = typeof secretCfg?.apiKey === 'string' ? secretCfg.apiKey.trim() : '';
+      const incomingKey = typeof body?.apiKey === 'string' ? body.apiKey.trim() : '';
+      const keyToUse = incomingKey || storedKey;
       const res = await serverBackendFetch<{
         ok: boolean;
         connected?: boolean;
         message?: string;
         error?: string;
         domains?: Array<{ name: string; status: string }>;
-      }>('/api/resend/test-connection', storedKey ? { apiKey: storedKey } : {});
+      }>('/api/resend/test-connection', keyToUse ? { apiKey: keyToUse } : {});
 
       const ok = Boolean(res.ok ?? res.connected);
       const message =

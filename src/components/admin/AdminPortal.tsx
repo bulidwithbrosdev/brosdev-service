@@ -49,6 +49,7 @@ import {
 } from './AdminSystemViews';
 import { AdminWidgetsView } from '../../widget-admin/AdminWidgetsView';
 import { AdminCampaignsView } from '../../campaigns/AdminCampaignsView';
+import { BrosDevLogo } from '../shared/Logo';
 
 type AdminSection =
   | 'dashboard'
@@ -200,9 +201,7 @@ export const AdminPortal: React.FC<{ onExitAdmin: () => void }> = ({ onExitAdmin
     <div className="flex flex-col h-full bg-white border-r border-[#E5E5E5]">
       <div className="h-16 px-5 border-b border-[#E5E5E5] flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded bg-[#A90706] flex items-center justify-center text-white font-bold text-sm">
-            B
-          </div>
+          <BrosDevLogo className="w-7 h-7" />
           <span className="font-bold text-sm text-[#111111] whitespace-nowrap">
             BrosDev Admin
           </span>

@@ -1,5 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { ShieldCheck, Send, RefreshCw, Save, CheckCircle2, AlertCircle } from 'lucide-react';
+import {
+  ShieldCheck,
+  Send,
+  RefreshCw,
+  Save,
+  CheckCircle2,
+  AlertCircle,
+  Copy,
+  Globe,
+  ExternalLink,
+  Zap,
+} from 'lucide-react';
 import { apiRequest } from '../../lib/api';
 
 interface ResendConfigResponse {
@@ -98,6 +109,14 @@ export const AdminResendView: React.FC = () => {
     }
   };
 
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string, keyName: string) => {
+    void navigator.clipboard.writeText(text);
+    setCopiedKey(keyName);
+    setTimeout(() => setCopiedKey(null), 2000);
+  };
+
   const handleTestConnection = async () => {
     setTestingConn(true);
     setFeedback(null);
@@ -106,7 +125,10 @@ export const AdminResendView: React.FC = () => {
         ok: boolean;
         message: string;
         domains: Array<{ name: string; status: string }>;
-      }>('/api/admin/resend/test-connection', { method: 'POST' });
+      }>('/api/admin/resend/test-connection', {
+        method: 'POST',
+        body: apiKeyInput.trim() ? { apiKey: apiKeyInput.trim() } : undefined,
+      });
       setDomains(res.domains || []);
       setFeedback({ ok: res.ok, text: res.message });
       await load();
@@ -115,6 +137,16 @@ export const AdminResendView: React.FC = () => {
     } finally {
       setTestingConn(false);
     }
+  };
+
+  const applyInstantTestPreset = () => {
+    setDefaultSenderName('BrosDev Forms');
+    setDefaultSenderEmail('onboarding@resend.dev');
+    setDefaultReplyTo('support@brosdev.info');
+    setFeedback({
+      ok: true,
+      text: 'Applied Instant Test Mode preset (onboarding@resend.dev). You can send test emails to your registered Resend account address immediately without waiting for custom DNS verification.',
+    });
   };
 
   const handleSendTest = async (e: React.FormEvent) => {
@@ -296,9 +328,20 @@ export const AdminResendView: React.FC = () => {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-[#111111] mb-1.5">
-                Default Sender Email
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-semibold text-[#111111]">
+                  Default Sender Email
+                </label>
+                <button
+                  type="button"
+                  onClick={applyInstantTestPreset}
+                  className="inline-flex items-center gap-1 text-[11px] font-medium text-[#A90706] hover:underline cursor-pointer"
+                  title="Click to fill onboarding@resend.dev for test sending"
+                >
+                  <Zap className="w-3 h-3" />
+                  Instant Test Mode
+                </button>
+              </div>
               <input
                 type="email"
                 required
@@ -428,6 +471,77 @@ export const AdminResendView: React.FC = () => {
                 ))}
               </div>
             )}
+          </div>
+
+          {/* DNS Records Reference for Custom Domain */}
+          <div className="bg-white border border-[#E5E5E5] rounded-lg p-6 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-[#111111]">Domain DNS Setup Reference</h3>
+              <a
+                href="https://resend.com/domains"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] text-[#A90706] hover:underline"
+              >
+                Resend Domains <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+            <p className="text-xs text-[#525252]">
+              To send from <code className="font-mono font-semibold">@{sendingDomain}</code> without rate limits or spam flags, add these records to your DNS provider:
+            </p>
+
+            <div className="space-y-2 text-xs">
+              <div className="p-2.5 bg-[#F9FAFB] border border-[#E5E5E5] rounded flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-[#111111]">SPF (TXT)</span>
+                  <div className="font-mono text-[#525252] text-[11px] mt-0.5 truncate max-w-[240px]">
+                    v=spf1 include:resend.com ~all
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard('v=spf1 include:resend.com ~all', 'spf')}
+                  className="p-1 hover:bg-[#E5E5E5] rounded text-[#737373] cursor-pointer"
+                  title="Copy SPF record"
+                >
+                  {copiedKey === 'spf' ? <CheckCircle2 className="w-3.5 h-3.5 text-[#16A34A]" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+
+              <div className="p-2.5 bg-[#F9FAFB] border border-[#E5E5E5] rounded flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-[#111111]">DKIM (TXT)</span>
+                  <div className="font-mono text-[#525252] text-[11px] mt-0.5 truncate max-w-[240px]">
+                    resend._domainkey
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard('resend._domainkey', 'dkim')}
+                  className="p-1 hover:bg-[#E5E5E5] rounded text-[#737373] cursor-pointer"
+                  title="Copy DKIM selector"
+                >
+                  {copiedKey === 'dkim' ? <CheckCircle2 className="w-3.5 h-3.5 text-[#16A34A]" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+
+              <div className="p-2.5 bg-[#F9FAFB] border border-[#E5E5E5] rounded flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-[#111111]">DMARC (TXT)</span>
+                  <div className="font-mono text-[#525252] text-[11px] mt-0.5 truncate max-w-[240px]">
+                    v=DMARC1; p=none;
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard('v=DMARC1; p=none;', 'dmarc')}
+                  className="p-1 hover:bg-[#E5E5E5] rounded text-[#737373] cursor-pointer"
+                  title="Copy DMARC record"
+                >
+                  {copiedKey === 'dmarc' ? <CheckCircle2 className="w-3.5 h-3.5 text-[#16A34A]" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>

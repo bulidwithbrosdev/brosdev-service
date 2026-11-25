@@ -315,6 +315,18 @@ export async function listSenderDomains(): Promise<EmailSenderDomainRecord[]> {
   }
 }
 
+async function getStoredResendApiKey(): Promise<string> {
+  try {
+    const snap = await getDoc(doc(db, 'settings', 'resend_secret'));
+    if (snap.exists() && typeof snap.data()?.value?.apiKey === 'string') {
+      return snap.data().value.apiKey.trim();
+    }
+  } catch {
+    // If not accessible or not configured, return empty string
+  }
+  return '';
+}
+
 export async function syncSenderDomainsFromResend(
   action: 'list' | 'create' | 'verify' = 'list',
   domainName?: string,
@@ -326,13 +338,19 @@ export async function syncSenderDomainsFromResend(
 }> {
   const uid = requireUid();
   const token = await getBearerToken();
+  const storedKey = await getStoredResendApiKey();
   const resp = await fetch(buildApiUrl('/api/campaigns/domains'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ action, domain: domainName, resendDomainId }),
+    body: JSON.stringify({
+      action,
+      domain: domainName,
+      resendDomainId,
+      ...(storedKey ? { apiKey: storedKey } : {}),
+    }),
   });
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) {
@@ -1031,13 +1049,17 @@ export async function sendCampaignTestEmail(params: {
   text: string;
 }): Promise<{ ok: boolean; providerMessageId: string; message: string }> {
   const token = await getBearerToken();
+  const storedKey = await getStoredResendApiKey();
   const resp = await fetch(buildApiUrl(`/api/campaigns/${encodeURIComponent(params.campaignId)}/test`), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify(params),
+    body: JSON.stringify({
+      ...params,
+      ...(storedKey ? { apiKey: storedKey } : {}),
+    }),
   });
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) {
@@ -1064,6 +1086,7 @@ export async function dispatchCampaignNow(params: {
 }> {
   const uid = requireUid();
   const token = await getBearerToken();
+  const storedKey = await getStoredResendApiKey();
   const resp = await fetch(
     buildApiUrl(`/api/campaigns/${encodeURIComponent(params.campaign.id)}/send`),
     {
@@ -1083,6 +1106,7 @@ export async function dispatchCampaignNow(params: {
         compiledText: params.campaign.compiledText,
         maxMonthlyQuota: params.maxMonthlyQuota,
         usedThisMonth: params.usedThisMonth,
+        ...(storedKey ? { apiKey: storedKey } : {}),
         recipients: params.recipients.map((r) => ({
           id: r.id,
           email: r.email,

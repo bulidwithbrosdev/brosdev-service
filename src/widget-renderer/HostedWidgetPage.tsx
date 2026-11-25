@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AlertCircle, ArrowLeft, Eye, ShieldAlert } from 'lucide-react';
+import { BrosDevLogo } from '../components/shared/Logo';
 import { getPublicWidgetForPage, recordWidgetEventClient } from '../widget-api/widgetsFirestore';
 import { hydrateWidgetConfiguration, getWidgetDefinition } from '../widgets/catalog';
 import { WidgetRenderer } from './WidgetRenderer';
@@ -128,9 +129,7 @@ export const HostedWidgetPage: React.FC<{ publicId: string }> = ({ publicId }) =
     return (
       <div className="min-h-screen bg-[#F5F5F5] flex items-center justify-center p-6">
         <div className="flex items-center gap-2.5 text-sm font-medium text-[#525252]">
-          <div className="w-6 h-6 rounded bg-[#A90706] flex items-center justify-center text-white font-bold text-xs">
-            B
-          </div>
+          <BrosDevLogo className="w-6 h-6 animate-pulse" />
           <span>Loading widget...</span>
         </div>
       </div>

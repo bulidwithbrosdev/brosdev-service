@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { readBody, sendJson, sha256Hex, verifyFirebaseToken } from './_lib.js';
+import { getCachedResendKey, readBody, sendJson, setCachedResendKey, sha256Hex, verifyFirebaseToken } from './_lib.js';
 
 const FIREBASE_PROJECT_ID =
   process.env.FIREBASE_PROJECT_ID || 'serious-airlock-smn89';
@@ -61,8 +61,15 @@ function getAppOrigin(req) {
   return `${proto}://${host}`;
 }
 
-function resolveServerResendKey() {
-  return String(process.env.RESEND_API_KEY || '').trim();
+function resolveServerResendKey(body) {
+  const fromEnv = String(process.env.RESEND_API_KEY || '').trim();
+  if (fromEnv) return fromEnv;
+  const fromBody = typeof body?.apiKey === 'string' ? body.apiKey.trim() : '';
+  if (fromBody) {
+    setCachedResendKey(fromBody);
+    return fromBody;
+  }
+  return getCachedResendKey();
 }
 
 let ephemeralUnsubFallbackSecret = null;
@@ -350,10 +357,43 @@ export async function sendEmailViaResendProvider({
     });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) {
+      const errMsg = data?.message || data?.error || `Resend rejected message (HTTP ${resp.status})`;
+      // If error is due to unverified sending domain, retry automatically with onboarding@resend.dev
+      const isDomainError =
+        resp.status === 403 &&
+        (errMsg.toLowerCase().includes('domain') ||
+          errMsg.toLowerCase().includes('not verified') ||
+          data?.name === 'validation_error');
+
+      if (isDomainError && cleanFromEmail !== 'onboarding@resend.dev') {
+        try {
+          const fallbackResp = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              ...payload,
+              from: `${cleanFromName} <onboarding@resend.dev>`,
+              reply_to: payload.reply_to || cleanFromEmail,
+            }),
+          });
+          const fallbackData = await fallbackResp.json().catch(() => ({}));
+          if (fallbackResp.ok && fallbackData?.id) {
+            return {
+              ok: true,
+              statusCode: fallbackResp.status,
+              providerMessageId: String(fallbackData.id),
+              fallbackNotice: `Delivered via onboarding@resend.dev (domain "${cleanFromEmail.split('@')[1] || ''}" requires DNS verification in Resend).`,
+            };
+          }
+        } catch {
+          // Fall back to original error
+        }
+      }
+
       return {
         ok: false,
         statusCode: resp.status,
-        error: data?.message || data?.error || `Resend rejected message (HTTP ${resp.status})`,
+        error: errMsg,
       };
     }
     return {
@@ -419,7 +459,7 @@ export async function handleCampaignTestSend(req, res, campaignId) {
   const pathMatch = urlPath.match(/\/api\/campaigns\/([^/]+)\/test\/?$/);
   const resolvedCampaignId = String(campaignId || req.query?.id || pathMatch?.[1] || 'test').trim();
 
-  const apiKey = resolveServerResendKey();
+  const apiKey = resolveServerResendKey(body);
   const origin = getAppOrigin(req);
   const unsubToken = createSignedUnsubscribeToken({
     ownerUid: user.uid,
@@ -490,7 +530,8 @@ export async function handleCampaignSend(req, res, campaignId) {
     return;
   }
 
-  const apiKey = resolveServerResendKey();
+  const body = await readBody(req);
+  const apiKey = resolveServerResendKey(body);
   if (!apiKey) {
     sendJson(res, 503, {
       error: 'RESEND_API_KEY is not configured on the server. Configure RESEND_API_KEY in Vercel environment variables before sending campaigns.',
@@ -507,7 +548,6 @@ export async function handleCampaignSend(req, res, campaignId) {
     return;
   }
 
-  const body = await readBody(req);
   const rawRecipients = Array.isArray(body?.recipients) ? body.recipients : [];
   if (rawRecipients.length === 0) {
     sendJson(res, 400, { error: 'No eligible subscribed recipients found for this campaign.' });
@@ -682,7 +722,8 @@ export async function handleCampaignDomains(req, res) {
     return;
   }
 
-  const apiKey = resolveServerResendKey();
+  const body = req.method === 'POST' ? await readBody(req) : {};
+  const apiKey = resolveServerResendKey(body);
   if (!apiKey) {
     sendJson(res, 200, {
       providerConfigured: false,
@@ -692,7 +733,6 @@ export async function handleCampaignDomains(req, res) {
     return;
   }
 
-  const body = req.method === 'POST' ? await readBody(req) : {};
   const action = String(body?.action || 'list');
 
   try {

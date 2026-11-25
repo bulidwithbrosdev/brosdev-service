@@ -139,9 +139,16 @@ function timingSafeHexEqual(a, b) {
 
 // ---------------- SEALED ROUTING TOKEN (AES-256-GCM) ----------------
 
+let ephemeralRoutingSecret = null;
+
 export function getRoutingKeyInfo() {
-  const secret = String(process.env.ENCRYPTION_KEY || process.env.RESEND_API_KEY || '').trim();
-  if (!secret) return null;
+  let secret = String(process.env.ENCRYPTION_KEY || process.env.RESEND_API_KEY || '').trim();
+  if (!secret) {
+    if (!ephemeralRoutingSecret) {
+      ephemeralRoutingSecret = 'brosdev-forms-routing-fallback-secret-2026';
+    }
+    secret = ephemeralRoutingSecret;
+  }
   const key = crypto
     .createHash('sha256')
     .update(`brosdev-routing-v1:${secret}`, 'utf8')
@@ -546,11 +553,27 @@ export async function verifyFirebaseToken(req) {
   }
 }
 
-function resolveResendKey(body) {
+let cachedResendApiKey = '';
+
+export function setCachedResendKey(key) {
+  if (typeof key === 'string' && key.trim()) {
+    cachedResendApiKey = key.trim();
+  }
+}
+
+export function getCachedResendKey() {
+  return cachedResendApiKey;
+}
+
+export function resolveResendKey(body) {
   const fromEnv = String(process.env.RESEND_API_KEY || '').trim();
   if (fromEnv) return fromEnv;
   const fromBody = typeof body?.apiKey === 'string' ? body.apiKey.trim() : '';
-  return fromBody;
+  if (fromBody) {
+    setCachedResendKey(fromBody);
+    return fromBody;
+  }
+  return getCachedResendKey();
 }
 
 // ---------------- EMAIL RENDERING & RESEND DISPATCH ----------------
@@ -665,9 +688,44 @@ async function sendViaResend({ apiKey, fromName, fromEmail, to, subject, html, r
 
   const json = await resp.json().catch(() => ({}));
   if (!resp.ok) {
+    const errMsg = json?.message || `Resend returned HTTP ${resp.status}`;
+    // If failure is due to unverified sending domain, retry automatically with onboarding@resend.dev
+    const isDomainError =
+      resp.status === 403 &&
+      (errMsg.toLowerCase().includes('domain') ||
+        errMsg.toLowerCase().includes('not verified') ||
+        json?.name === 'validation_error');
+
+    if (isDomainError && safeFromEmail !== 'onboarding@resend.dev') {
+      try {
+        const fallbackResp = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            ...payload,
+            from: `${safeFromName} <onboarding@resend.dev>`,
+            reply_to: payload.reply_to || safeFromEmail,
+          }),
+        });
+        const fallbackJson = await fallbackResp.json().catch(() => ({}));
+        if (fallbackResp.ok && fallbackJson?.id) {
+          return {
+            ok: true,
+            resendMessageId: String(fallbackJson.id),
+            fallbackNotice: `Delivered via onboarding@resend.dev (domain "${safeFromEmail.split('@')[1] || ''}" requires verification in Resend).`,
+          };
+        }
+      } catch {
+        // Fall back to returning original error
+      }
+    }
+
     return {
       ok: false,
-      error: json?.message || `Resend returned HTTP ${resp.status}`,
+      error: errMsg,
     };
   }
   return {
@@ -835,6 +893,8 @@ export async function handleResendTestConnection(req, res) {
       domains.length > 0
         ? `Connected to Resend successfully. Found ${domains.length} domain(s) (${verifiedCount} verified).`
         : 'Connected to Resend successfully (no custom sending domains added in Resend yet).';
+
+    setCachedResendKey(apiKey);
 
     return sendJson(res, 200, {
       ok: true,
@@ -1189,7 +1249,7 @@ export async function handlePublicSubmit(req, res, explicitFormKey) {
 
   // 6. Unseal server-side email routing config & dispatch via Resend
   const cleanPayload = sanitizePayloadForFirestore(rawPayload);
-  const resendApiKey = String(process.env.RESEND_API_KEY || '').trim();
+  const resendApiKey = resolveResendKey();
   const routingConfig = unsealRoutingPayload(publicForm.routingToken);
 
   let emailDeliveryStatus = 'disabled';

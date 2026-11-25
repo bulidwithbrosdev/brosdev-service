@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ShieldCheck, Mail, Code2, Layers, ArrowRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { BrosDevLogo } from './shared/Logo';
 
 export const AuthGate: React.FC<{ isAdminRoute: boolean }> = ({ isAdminRoute }) => {
   const { signInWithGoogle, signInWithEmail, registerWithEmail, error, clearError } = useAuth();
@@ -32,9 +33,7 @@ export const AuthGate: React.FC<{ isAdminRoute: boolean }> = ({ isAdminRoute }) 
     <div className="min-h-screen bg-[#F5F5F5] flex flex-col">
       <header className="bg-white border-b border-[#E5E5E5] px-6 md:px-10 h-16 flex items-center justify-between gap-8">
         <div className="flex items-center gap-2.5 whitespace-nowrap shrink-0">
-          <div className="w-7 h-7 rounded bg-[#A90706] flex items-center justify-center text-white font-bold text-sm">
-            B
-          </div>
+          <BrosDevLogo className="w-8 h-8" />
           <span className="font-bold text-lg tracking-tight text-[#111111]">
             BrosDev Forms
           </span>

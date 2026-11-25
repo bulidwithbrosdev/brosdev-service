@@ -48,6 +48,7 @@ import { AccountSettingsView } from './AccountSettingsView';
 import { WidgetsDashboardView, type WidgetsHubTab } from '../../widgets/WidgetsDashboardView';
 import { CampaignsHubView, type CampaignsHubSection } from '../../campaigns/CampaignsHubView';
 import { UpgradeModal } from '../shared/UpgradeModal';
+import { BrosDevLogo } from '../shared/Logo';
 import { apiRequest } from '../../lib/api';
 import { hasPlanFeature, isFormLimitReached, type PlanLockKey } from '../../lib/planLimits';
 
@@ -226,9 +227,7 @@ export const CustomerPortal: React.FC<{ onEnterAdmin: () => void }> = ({ onEnter
     <div className="flex flex-col h-full bg-white border-r border-[#E5E5E5]">
       <div className="h-16 px-5 border-b border-[#E5E5E5] flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded bg-[#A90706] flex items-center justify-center text-white font-bold text-sm">
-            B
-          </div>
+          <BrosDevLogo className="w-7 h-7" />
           <span className="font-bold text-base tracking-tight text-[#111111] whitespace-nowrap">
             BrosDev Services
           </span>

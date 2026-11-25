@@ -287,6 +287,57 @@ export async function sendEmailViaResend(params: SendResendParams): Promise<{
 
     if (!response.ok || !bodyJson.id) {
       const errMsg = bodyJson.message || `Resend API error (HTTP ${response.status})`;
+      const isDomainError =
+        response.status === 403 &&
+        (errMsg.toLowerCase().includes('domain') ||
+          errMsg.toLowerCase().includes('not verified') ||
+          bodyJson.name === 'validation_error');
+
+      if (isDomainError && verifiedSender !== 'onboarding@resend.dev') {
+        try {
+          const fallbackRes = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              ...resendPayload,
+              from: buildVerifiedFromHeader(
+                params.senderDisplayName || settings?.defaultSenderName,
+                'onboarding@resend.dev'
+              ),
+              reply_to: resendPayload.reply_to || verifiedSender,
+            }),
+          });
+          const fallbackBody = (await fallbackRes.json().catch(() => ({}))) as { id?: string };
+          if (fallbackRes.ok && fallbackBody?.id) {
+            await db
+              .update(emailLogs)
+              .set({
+                status: 'accepted',
+                resendMessageId: fallbackBody.id,
+                errorDetails: `Delivered via onboarding@resend.dev (domain "${verifiedSender.split('@')[1] || ''}" requires verification in Resend).`,
+                retryCount: params.retryEmailLogId ? sql`${emailLogs.retryCount} + 1` : 0,
+                updatedAt: new Date(),
+              })
+              .where(eq(emailLogs.id, logId));
+
+            if (settings) {
+              await db
+                .update(emailProviderSettings)
+                .set({ connectionStatus: 'connected', lastError: null, updatedAt: new Date() })
+                .where(eq(emailProviderSettings.id, settings.id));
+            }
+
+            return {
+              emailLogId: logId,
+              status: 'accepted',
+              resendMessageId: fallbackBody.id,
+            };
+          }
+        } catch {
+          // Fall through to failure handling
+        }
+      }
+
       await db
         .update(emailLogs)
         .set({

@@ -6,6 +6,7 @@ import { AdminPortal } from './components/admin/AdminPortal';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import { HostedWidgetPage } from './widget-renderer/HostedWidgetPage';
 import { UnsubscribePage } from './campaigns/UnsubscribePage';
+import { BrosDevLogo } from './components/shared/Logo';
 
 function AppShell() {
   const { isAuthenticated, workspace, loading } = useAuth();
@@ -43,9 +44,7 @@ function AppShell() {
     return (
       <div className="min-h-screen bg-[#F5F5F5] flex items-center justify-center">
         <div className="flex items-center gap-3 text-sm font-medium text-[#525252]">
-          <div className="w-6 h-6 rounded bg-[#A90706] flex items-center justify-center text-white font-bold text-xs">
-            B
-          </div>
+          <BrosDevLogo className="w-6 h-6 animate-pulse" />
           <span>Loading BrosDev Services...</span>
         </div>
       </div>

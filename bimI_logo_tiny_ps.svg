@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     version="1.2"
+     baseProfile="tiny-ps"
+     width="512" height="512"
+     viewBox="0 0 512 512">
+  <title>BrosDev Logo</title>
+  <path fill="#A90706" fill-rule="evenodd" d="
+    M 237 121
+    L 244 121
+    L 333 177
+    L 281 213
+    L 239 189
+    L 198 215
+    L 196 267
+    L 242 295
+    L 288 263
+    L 364 303
+    L 354 313
+    L 242 437
+    L 148 335
+    L 148 175
+    Z
+    M 238 73
+    L 103 149
+    L 103 371
+    L 243 437
+    L 407 331
+    L 407 275
+    L 329 235
+    L 377 201
+    L 377 147
+    L 247 75
+    Z"/>
+</svg>
