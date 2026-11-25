@@ -77,6 +77,7 @@ let ephemeralUnsubFallbackSecret = null;
 function getUnsubscribeSigningKey() {
   let secret = String(
     process.env.UNSUBSCRIBE_SIGNING_SECRET ||
+      process.env.UNSUBSCRIBE_SIGNING_SE ||
       process.env.ENCRYPTION_KEY ||
       process.env.RESEND_API_KEY ||
       ''

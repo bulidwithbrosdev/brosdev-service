@@ -39,6 +39,7 @@ import {
   hydratePlanQuotas,
   isAdvancedFieldType,
 } from './planLimits';
+import { buildApiUrl } from './api';
 
 const SUPER_ADMIN_EMAIL = 'gajjars614@gmail.com';
 
@@ -557,7 +558,8 @@ async function sha256HexClient(input: string): Promise<string> {
 async function serverBackendFetch<T = any>(path: string, body: unknown): Promise<T> {
   const user = auth.currentUser;
   const token = user ? await user.getIdToken() : '';
-  const res = await fetch(path, {
+  const targetUrl = buildApiUrl(path);
+  const res = await fetch(targetUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

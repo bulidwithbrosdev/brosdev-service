@@ -1063,7 +1063,7 @@ export async function sendCampaignTestEmail(params: {
   });
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) {
-    throw new Error(data?.error || 'Test email failed via Resend.');
+    throw new Error(data?.error || `Test email failed via Resend (${resp.status}).`);
   }
   return {
     ok: true,
@@ -1118,7 +1118,7 @@ export async function dispatchCampaignNow(params: {
   );
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) {
-    throw new Error(data?.error || 'Campaign dispatch failed.');
+    throw new Error(data?.error || `Campaign dispatch failed (${resp.status}).`);
   }
 
   // Persist authoritative stats & usage counter under the authenticated owner
