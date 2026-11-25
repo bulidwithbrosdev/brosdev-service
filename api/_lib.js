@@ -357,7 +357,11 @@ export async function readBodyWithFiles(req) {
   }
 
   const rawBuf = await readRawBuffer(req);
-  const raw = rawBuf.toString('utf8').trim();
+  const rawString = rawBuf.toString('utf8');
+  if (typeof req.rawBody !== 'string') {
+    req.rawBody = rawString;
+  }
+  const raw = rawString.trim();
   if (!raw) return { fields: {}, files: [] };
 
   if (lowerCt.includes('application/x-www-form-urlencoded')) {

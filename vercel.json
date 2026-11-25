@@ -5,27 +5,23 @@
   "rewrites": [
     {
       "source": "/submit/:formKey",
-      "destination": "/api/submit/:formKey"
+      "destination": "/api/index?__path=/submit/:formKey"
     },
     {
       "source": "/embed/:formKey",
-      "destination": "/api/embed/:formKey"
-    },
-    {
-      "source": "/r/:slug",
-      "destination": "/api/r/:slug"
-    },
-    {
-      "source": "/api/billing/razorpay/webhook",
-      "destination": "/api/billing/razorpay-webhook"
+      "destination": "/api/index?__path=/embed/:formKey"
     },
     {
       "source": "/embed.js",
-      "destination": "/api/widgets/embed"
+      "destination": "/api/index?__path=/embed.js"
     },
     {
-      "source": "/api/widgets/embed.js",
-      "destination": "/api/widgets/embed"
+      "source": "/r/:slug",
+      "destination": "/api/index?__path=/r/:slug"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index?__path=/api/$1"
     },
     {
       "source": "/((?!api/).*)",
